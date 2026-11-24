@@ -300,7 +300,7 @@ function vInicio() {
   if (!S.cfg.backup || days(S.cfg.backup) > 7) alerts.push({ h:'#datos', t:S.cfg.backup ? `Hace ${days(S.cfg.backup)} días que no descargás un respaldo` : 'Todavía no descargaste un respaldo de tus datos', s:'Tus datos están solo en este dispositivo', k:'warn' });
   ops.forEach((o, i) => { if (o.estado === 'Abierta' && o.estG > 0 && ks[i].dif > o.estG * 0.05) alerts.push({ h:'#op-' + o.id, t:`${o.desc}: gastos ${gs(ks[i].dif)} sobre lo estimado`, s:'Desvío de costos', k:'warn' }); });
   const abiertas = ops.filter(o => o.estado === 'Abierta');
-  return `<div class="top"><div class="brand"><span class="mark">${I.mark}</span>Pecomex</div>${pill('Datos de ejemplo')}</div>
+  return `<div class="top"><div class="brand"><img class="toplogo" src="icons/logo-pecomex.png" alt="Pecomex"></div>${pill('Datos de ejemplo')}</div>
   <h1>Hoy en la agencia</h1>
   <p class="muted small" style="margin-top:4px">${fd(iso(new Date()))} · ${abiertas.length} operaciones abiertas</p>
   <div class="sec"><div class="card hero">
@@ -416,6 +416,146 @@ function crearDesdeHoja(d, hon, estG) {
     docs:{ factura:false, crt:false, packing:false, mandato:false, hoja:true }, movs:[] });
   return id;
 }
+/* ---------- Importar liquidación hecha en Excel (.xlsx) ----------
+   Un .xlsx es un ZIP con archivos XML. Se descomprime con el navegador (DecompressionStream), sin librerías ni servidor. */
+async function unzip(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf), td = new TextDecoder(), files = {};
+  let e = buf.byteLength - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('El archivo no es una planilla de Excel (.xlsx). Si es .xls, abrila en Excel y guardala como .xlsx.');
+  let p = dv.getUint32(e + 16, true);
+  for (let i = 0, n = dv.getUint16(e + 10, true); i < n; i++) {
+    const nl = dv.getUint16(p + 28, true), name = td.decode(u8.subarray(p + 46, p + 46 + nl));
+    files[name] = { meth:dv.getUint16(p + 10, true), cs:dv.getUint32(p + 20, true), off:dv.getUint32(p + 42, true) };
+    p += 46 + nl + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+  }
+  return async name => {
+    const f = files[name]; if (!f) return null;
+    const s = f.off + 30 + dv.getUint16(f.off + 26, true) + dv.getUint16(f.off + 28, true), data = u8.subarray(s, s + f.cs);
+    if (f.meth === 0) return td.decode(data);
+    return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  };
+}
+async function leerXlsx(file) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('Este navegador es muy viejo para leer Excel. Actualizá el sistema o probá desde Chrome.');
+  const get = await unzip(await file.arrayBuffer()), X = s => new DOMParser().parseFromString(s, 'application/xml');
+  const tx = el => [...el.getElementsByTagName('t')].map(t => t.textContent).join('');
+  const ss = await get('xl/sharedStrings.xml'), strs = ss ? [...X(ss).getElementsByTagName('si')].map(tx) : [];
+  // primera hoja del libro, según el orden del archivo
+  let path = 'xl/worksheets/sheet1.xml';
+  try {
+    const wb = X(await get('xl/workbook.xml')), rid = wb.getElementsByTagName('sheet')[0].getAttribute('r:id');
+    const rel = [...X(await get('xl/_rels/workbook.xml.rels')).getElementsByTagName('Relationship')].find(r => r.getAttribute('Id') === rid);
+    if (rel) path = 'xl/' + rel.getAttribute('Target').replace(/^\/?xl\//, '');
+  } catch (err) {}
+  const sh = await get(path); if (!sh) throw new Error('No encontré la hoja de cálculo dentro del archivo.');
+  const colN = ref => [...ref.replace(/\d+/g, '')].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+  const rows = [];
+  [...X(sh).getElementsByTagName('row')].forEach(r => {
+    const cells = [];
+    [...r.getElementsByTagName('c')].forEach(c => {
+      const t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0];
+      let val = t === 'inlineStr' ? tx(c) : v ? v.textContent : '';
+      if (t === 's') val = strs[+val] || '';
+      else if (t !== 'str' && t !== 'inlineStr' && t !== 'e' && val !== '' && !isNaN(+val)) val = +val;
+      if (t === 'e' || val === '') return; // celdas vacías o con error (#REF!)
+      cells.push({ c:colN(c.getAttribute('r')), v:val });
+    });
+    if (cells.length) rows.push({ r:+r.getAttribute('r'), cells });
+  });
+  return rows;
+}
+const nrm = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+const ACENTO = { valoracion:'valoración', verificacion:'verificación', consularizacion:'consularización', guia:'guía', intervencion:'intervención', interes:'interés', mercaderia:'mercadería', almacenaje:'almacenaje', aduanero:'aduanero', maritima:'marítima', transito:'tránsito', deposito:'depósito', despacho:'despacho' };
+function etiqueta(s) { // "SERVICIO DE VALORACION" → "Servicio de valoración"; deja siglas como IRE, INDI, I.V.A.
+  const w = String(s).replace(/\s+/g, ' ').trim().split(' ');
+  return w.map((x, i) => {
+    if (/\w\.\w/.test(x) || /^(IRE|INDI|IVA|ISC|DINAN|DNIT|ANNP|DINAC|MIC|SENAVE|CDAP|CRT|DTA|BL|USD|S\.?A\.?|SRL|SAECA)$/.test(x)) return x; // siglas
+    const l = x.toLowerCase(), b = ACENTO[l.normalize('NFD').replace(/[̀-ͯ]/g, '')] || l;
+    return i === 0 ? b.charAt(0).toUpperCase() + b.slice(1) : b;
+  }).join(' ');
+}
+const RE_TRIB = /DERECHO|\bINDI\b|VALORACION|\bIRE\b|(^|\s)I\.\s?V\.\s?A\.?(\s|$)|\bIVA\b|CANON|INTERVENCION|ARANCEL|SELECTIVO|\bISC\b|RED BANCARIA|IMPUESTO|INTERES|TRIBUTO/;
+const RE_SERV = /GASTOS? DE DESPACHO|VERIFICACION|HONORARIO/;
+function parseLiqXlsx(rows) {
+  const txt = c => typeof c.v === 'string';
+  const label = (re) => { // valor a la derecha de una etiqueta del encabezado
+    for (const row of rows) { const k = row.cells.findIndex(c => txt(c) && re.test(nrm(c.v))); if (k >= 0) { const v = row.cells.slice(k + 1).find(c => !(txt(c) && /:\s*$/.test(c.v))); return v ? v.v : null; } }
+    return null;
+  };
+  const fecha = v => typeof v === 'number' ? iso(new Date(Date.UTC(1899, 11, 30) + v * 864e5 + 12 * 36e5)) : (s => s ? `${s[3]}-${s[2].padStart(2, '0')}-${s[1].padStart(2, '0')}` : null)(String(v || '').match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/));
+  const num = v => typeof v === 'number' ? v : money(v);
+  const d = { nro:label(/^LIQ/), para:label(/^PARA\b/), consignado:label(/^CONSIGNADO/), fecha:fecha(label(/^FECHA/)), despacho:label(/^DESPACHO/),
+    imponible:num(label(/^VALOR IMP/)), cambio:num(label(/CAMBIO/)), procedencia:label(/^PROCEDENCIA/), origen:label(/^PAIS DE ORIGEN/), aduana:label(/^ADUANA/) };
+  const di = rows.findIndex(r => r.cells.some(c => txt(c) && nrm(c.v).replace(/ /g, '').includes('DETALLEDEGASTOS')));
+  if (di < 0) throw new Error('No encontré el "Detalle de gastos" en la planilla. ¿Es una liquidación de la agencia?');
+  const ti = rows.findIndex((r, i) => i > di && r.cells.some(c => c.c < 4 && txt(c) && /^TOTAL\b/.test(nrm(c.v))));
+  const end = ti > 0 ? ti : rows.length;
+  // la columna de los montos es la del TOTAL; si no hay TOTAL, la columna con más números
+  let col = ti > 0 ? (rows[ti].cells.find(c => typeof c.v === 'number') || {}).c : null;
+  if (col == null) { const cnt = {}; rows.slice(di + 1, end).forEach(r => r.cells.forEach(c => { if (typeof c.v === 'number') cnt[c.c] = (cnt[c.c] || 0) + 1; })); col = +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0]; }
+  d.t = []; d.g = []; d.s = []; d.ivaPlanilla = null; d.mercaderia = '';
+  rows.slice(di + 1, end).forEach((r, i) => {
+    const lc = r.cells.find(c => txt(c) && c.c < col); if (!lc) return;
+    const n = nrm(lc.v), am = r.cells.find(c => c.c === col && typeof c.v === 'number'), m = am ? Math.round(am.v) : 0;
+    if (i === 0 && !m && !RE_TRIB.test(n) && !RE_SERV.test(n)) { d.mercaderia = etiqueta(lc.v); return; }
+    if (/^I\.?\s?V\.?\s?A\.?$|^IVA$/.test(n) && d.s.length) { d.ivaPlanilla = m; return; } // IVA de los servicios: la app lo calcula
+    const l = { c:etiqueta(lc.v), m };
+    if (RE_SERV.test(n)) { if (/HONORARIO/.test(n)) l.h = true; d.s.push(l); } else if (RE_TRIB.test(n) && !d.g.some(x => x.m)) d.t.push(l); else d.g.push(l);
+  });
+  d.totalPlanilla = ti > 0 ? Math.round((rows[ti].cells.find(c => c.c === col) || { v:0 }).v || 0) : null;
+  const an = rows.slice(end).flatMap(r => r.cells).find(c => txt(c) && /ANTICIPO/.test(nrm(c.v)));
+  if (an) { const row = rows.find(r => r.cells.includes(an)), nm = row.cells.find(c => typeof c.v === 'number'); d.anticipo = nm ? Math.round(nm.v) : money((String(an.v).match(/\d{1,3}(\.\d{3})+|\d{4,}/) || [''])[0]); }
+  if (!d.t.length && !d.g.length && !d.s.length) throw new Error('La planilla no tiene líneas de gastos con montos.');
+  ['para', 'consignado', 'procedencia', 'origen', 'aduana', 'despacho', 'nro'].forEach(k => { if (d[k] != null) d[k] = String(d[k]).trim(); });
+  return d;
+}
+async function onXlsx(file, opId) {
+  ui.lx = { busy:true, opId }; render();
+  try { ui.lx = { d:parseLiqXlsx(await leerXlsx(file)), opId, name:file.name }; }
+  catch (e) { ui.lx = { err:(e && e.message) || 'No se pudo leer la planilla.', opId }; }
+  render();
+}
+const lxOp = lx => lx.opId ? S.ops.find(o => o.id === lx.opId) : S.ops.find(o => String(o.ref).trim().toUpperCase() === String(lx.d.despacho || '').trim().toUpperCase());
+function lxCard(opId) { // botón + vista previa; opId = null desde Operaciones
+  const lx = ui.lx && (ui.lx.opId || null) === (opId || null) ? ui.lx : null;
+  return `<label class="btn alt filebtn">${lx && lx.busy ? 'Leyendo la planilla…' : 'Importar liquidación de Excel'}<input class="lxfile" data-op="${opId || ''}" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden></label>
+    ${lx && lx.err ? `<div class="note warn"><b>No pude leer esa planilla.</b> ${esc(lx.err)}</div>` : ''}${lx && lx.d ? lxPreview(lx) : ''}`;
+}
+function lxPreview(lx) {
+  const d = lx.d, o = lxOp(lx), q = { t:d.t, g:d.g, s:d.s }, s = a => sum(a, l => l.m);
+  const sv = s(d.s), iva = Math.round(sv * 0.1), tot = s(d.t) + s(d.g) + sv + iva, cobr = o ? sum(o.movs.filter(m => m.t === 'c'), m => m.m) : 0;
+  const okTot = d.totalPlanilla == null || Math.abs(d.totalPlanilla - tot) <= 2, dif = (d.anticipo || 0) - cobr;
+  const cl = !o && S.clientes.find(c => nrm(c.nombre) === nrm(d.para || ''));
+  return `<div class="card imp lxprev"><h3>Liquidación leída de Excel</h3><p class="small muted">${esc(lx.name || '')}</p>
+    <dl class="kv" style="margin-top:10px">${[['Liquidación N°', d.nro], ['Fecha', d.fecha && fd(d.fecha)], ['Para', d.para], ['Despacho N°', d.despacho], ['Valor imponible', d.imponible ? gs(d.imponible) : ''], ['Tipo de cambio', d.cambio ? dec(d.cambio) : ''], ['Aduana', d.aduana], ['Mercadería', d.mercaderia]].filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('')}</dl>
+    <ul class="ck" style="margin-top:12px">${['t', 'g', 's'].map(k => `<li class="ok"><span>✓</span><span>${LQG[k].replace(' (hoja de despacho)', '')}: ${q[k].filter(l => l.m).length} con monto${q[k].some(l => !l.m) ? `, ${q[k].filter(l => !l.m).length} en blanco` : ''} · <b class="mono">${gs(s(q[k]))}</b></span></li>`).join('')}
+      <li class="${okTot ? 'ok' : 'bad'}"><span>${okTot ? '✓' : '✗'}</span><span>Total recalculado <b class="mono">${gs(tot)}</b>${d.totalPlanilla != null ? (okTot ? ' (igual al de la planilla)' : ` · la planilla dice <b class="mono">${gs(d.totalPlanilla)}</b>: revisá las fórmulas`) : ''}</span></li></ul>
+    <div class="note ${o ? 'good' : 'warn'}" style="margin-top:12px">${o ? `Se carga en la operación <b>${esc(o.desc)}</b>${o.ref !== d.despacho && d.despacho ? ` (despacho ${esc(o.ref)}; la planilla dice ${esc(d.despacho)})` : ''}.${o.lq ? ` Reemplaza la liquidación N° ${esc(o.lq.nro)}.` : ''}${o.estado === 'Abierta' ? ' La operación pasa a terminada.' : ''}`
+      : `No hay una operación con el despacho ${esc(d.despacho || '(sin número)')}: se crea una nueva, ya terminada, para ${cl ? `<b>${esc(cl.nombre)}</b>` : `el cliente nuevo <b>${esc(tcase(d.para || 'Sin nombre'))}</b> (cargale el RUC después)`}.`}</div>
+    ${d.anticipo ? `<label class="chk"><input type="checkbox" id="lx-ant" ${dif > 0 ? 'checked' : 'disabled'}> <span>La planilla tiene un anticipo de <b class="mono">${gs(d.anticipo)}</b>. ${dif > 0 ? `Registrar <b class="mono">${gs(dif)}</b> como cobro${cobr ? ` (ya hay ${gs(cobr)} cobrados)` : ''}.` : 'Ya está registrado en los cobros.'}</span></label>` : ''}
+    <div class="btns" style="margin-top:14px"><button class="btn acc" type="button" data-a="lxOk">Cargar liquidación</button><button class="btn alt" type="button" data-a="lxCancel">Descartar</button></div></div>`;
+}
+function cargarLx() {
+  const lx = ui.lx, d = lx.d; let o = lxOp(lx);
+  if (o && o.lq && !confirm(`¿Reemplazar la liquidación N° ${o.lq.nro} de esta operación por la de Excel?`)) return null;
+  if (!o) {
+    let cl = S.clientes.find(c => nrm(c.nombre) === nrm(d.para || ''));
+    if (!cl) { cl = { id:Math.max(0, ...S.clientes.map(c => c.id)) + 1, nombre:tcase(d.para || 'Cliente sin nombre'), ruc:'' }; S.clientes.push(cl); }
+    const code = (String(d.despacho || '').match(/[A-Z]{2}\d{2}/) || [''])[0];
+    o = { id:Math.max(0, ...S.ops.map(x => x.id)) + 1, cl:cl.id, ref:d.despacho || 'SIN-NUMERO-' + Date.now(), reg:REG[code] ? code + ' · ' + REG[code] : 'Por definir', aduana:tcase(d.aduana || 'Por definir'),
+      desc:d.mercaderia || 'Despacho ' + (d.despacho || ''), estado:'Cerrada', fecha:d.fecha || iso(new Date()), cierre:d.fecha || iso(new Date()),
+      estG:sum(d.t.concat(d.g), l => l.m), hon:(d.s.find(l => l.h) || { m:0 }).m, docs:{ factura:false, crt:false, packing:false, mandato:false, hoja:false }, movs:[] };
+    S.ops.push(o);
+  }
+  if (!o.imponible && d.imponible) o.imponible = d.imponible;
+  if (!o.cambio && d.cambio) o.cambio = d.cambio;
+  if (o.estado === 'Abierta') { o.estado = 'Cerrada'; o.cierre = d.fecha || iso(new Date()); }
+  const chk = $('#lx-ant');
+  if (d.anticipo && chk && chk.checked) { const dif = d.anticipo - sum(o.movs.filter(m => m.t === 'c'), m => m.m); if (dif > 0) o.movs.push({ id:Date.now(), f:d.fecha || iso(new Date()), t:'c', c:'Anticipo de despacho (según liquidación)', m:dif }); }
+  o.lq = { nro:d.nro || '', fecha:d.fecha || iso(new Date()), consignado:d.consignado || 'Al mismo.', mercaderia:d.mercaderia || o.desc, procedencia:etiqueta(d.procedencia || ''), origen:etiqueta(d.origen || ''), emitida:null,
+    t:d.t.map(l => ({ ...l })), g:d.g.map(l => ({ ...l })), s:d.s.map(l => ({ ...l })), excel:true };
+  ui.lx = null; save(); return o;
+}
 function vOps() {
   let ops = S.ops.slice().sort((a, b) => (b.fecha > a.fecha ? 1 : -1));
   if (ui.filtro === 'abiertas') ops = ops.filter(o => o.estado === 'Abierta');
@@ -424,6 +564,9 @@ function vOps() {
   return `<div class="top"><h1>Operaciones</h1></div>
   <div class="chips">${f('todas', 'Todas')}${f('abiertas', 'Abiertas')}${f('cerradas', 'Cerradas')}</div>
   ${impCard()}
+  <div class="sec"><div class="card imp"><h3>Importar liquidación hecha en Excel</h3>
+    <p class="small muted" style="margin:4px 0 12px">Si la agencia prefiere armar la liquidación en su planilla, subila acá: se carga en la operación con el mismo despacho (o se crea una), lista para imprimir o mandar. Se lee en tu dispositivo.</p>
+    ${lxCard(null)}</div></div>
   <div class="sec" style="margin-top:14px"><div class="list">${ops.map(opRow).join('') || '<div class="empty">No hay operaciones.</div>'}</div></div>
   <div class="sec"><details class="card"><summary>Nueva operación</summary>
     <form class="form" id="newOp">
@@ -545,6 +688,17 @@ function vCliente(id) {
 /* ---------- Liquidación de gastos al cliente ----------
    o.lq = { nro, fecha, consignado, mercaderia, procedencia, origen, emitida, t:[tributos], g:[gastos de terceros], s:[servicios con IVA] }
    Cada línea es { c:concepto, m:monto }; la del honorario lleva h:true. Las líneas en 0 no salen en el documento. */
+const logoSrc = () => S.cfg.logo || 'icons/logo-pecomex.png'; // logo de los documentos: el de la agencia o el de Pecomex
+function cargarLogo(file) { // achica la imagen (máx. 600×220) para que entre en el almacenamiento del navegador
+  const img = new Image(), url = URL.createObjectURL(file);
+  img.onload = () => {
+    const k = Math.min(1, 600 / img.width, 220 / img.height), cv = document.createElement('canvas');
+    cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k); cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    URL.revokeObjectURL(url); S.cfg.logo = cv.toDataURL('image/png'); save(); render(); toast('Logo actualizado en los documentos');
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast('No pude abrir esa imagen'); };
+  img.src = url;
+}
 const LQG = { t:'Tributos (hoja de despacho)', g:'Gastos de terceros', s:'Servicios de la agencia (+ IVA 10 %)' };
 function lqTot(o) {
   const q = o.lq, s = a => sum(a, l => +l.m || 0);
@@ -592,7 +746,7 @@ function lqTotHtml(o) {
 function vLiq(o) {
   if (!o.lq) return `<div class="card"><h3>Liquidación de gastos al cliente</h3>
     <p class="small muted" style="margin:6px 0 14px">Se arma sola con lo que ya está cargado: tributos de la hoja de despacho, gastos registrados, servicios de la agencia y honorario por escala. Después completás a mano lo que falte (tasa portuaria, fotocopias, etc.).</p>
-    <button class="btn acc" type="button" data-a="lqNew" data-id="${o.id}" style="width:100%">Armar liquidación</button></div>`;
+    <div class="btns"><button class="btn acc" type="button" data-a="lqNew" data-id="${o.id}">Armar liquidación</button>${lxCard(o.id)}</div></div>`;
   const q = o.lq, view = ui.lqView || (q.emitida ? 'doc' : 'edit');
   const sg = (v, t) => `<button class="chip" type="button" data-a="lqView" data-v="${v}" aria-pressed="${view === v}">${t}</button>`;
   const top = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="chips">${sg('edit', 'Completar')}${sg('doc', 'Ver documento')}</div>${q.emitida ? pill('Emitida el ' + fd(q.emitida), 'ok') : pill('Borrador', 'warn')}</div>`;
@@ -608,6 +762,7 @@ function vLiq(o) {
   return top + `<form class="form" id="lqForm" data-op="${o.id}" autocomplete="off">
     <details class="card"><summary>Datos de la liquidación · N° ${esc(q.nro)}</summary><div class="form">
       <label>Nombre de la agencia (encabezado de todas las liquidaciones)<input id="lq-agencia" value="${esc(S.cfg.agencia)}" placeholder="Ej. Agencia de Despachos …"></label>
+      <div class="logopick"><img src="${logoSrc()}" alt="Logo actual de los documentos"><div class="btns"><label class="btn alt filebtn">Cambiar logo<input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>${S.cfg.logo ? '<button class="btn alt" type="button" data-a="logoReset">Usar logo de Pecomex</button>' : ''}</div></div>
       <div class="two"><label>Liquidación N°<input id="lq-nro" value="${esc(q.nro)}"></label><label>Fecha<input id="lq-fecha" type="date" value="${q.fecha}"></label></div>
       <label>Consignado<input id="lq-consignado" value="${esc(q.consignado)}"></label>
       <label>Mercadería<input id="lq-mercaderia" value="${esc(q.mercaderia)}"></label>
@@ -618,7 +773,8 @@ function vLiq(o) {
     <p class="muted small">Se guarda solo mientras escribís. Las líneas en 0 no aparecen en el documento.</p>
     <div class="btns"><button class="btn acc" type="button" data-a="lqView" data-v="doc">Ver documento</button><button class="btn alt" type="button" data-a="lqTpl">Guardar como plantilla</button></div>
     <button class="btn bad" type="button" data-a="lqDelAll" data-id="${o.id}">Borrar y volver a armar</button>
-  </form>`;
+  </form>
+  <div class="card"><h3>¿La hiciste en Excel?</h3><p class="small muted" style="margin:4px 0 12px">Subí la planilla y reemplaza estos datos.</p>${lxCard(o.id)}</div>`;
 }
 function lqDoc(o) {
   const q = o.lq, L = lqTot(o), c = cliente(o.cl);
@@ -627,7 +783,8 @@ function lqDoc(o) {
   const kv = [['Para', c.nombre], ['Consignado', q.consignado], ['Despacho N°', o.ref], ['Aduana', o.aduana], ['Valor imponible', o.imponible ? gs(o.imponible) : ''], ['Tipo de cambio', o.cambio ? dec(o.cambio) : ''], ['Procedencia', q.procedencia], ['País de origen', q.origen]].filter(r => r[1]);
   const fac = q.s.filter(l => +l.m);
   return `<div class="card edoc print-area lqdoc">
-    <div class="edoc-head"><div>${S.cfg.agencia ? `<p class="small"><b>${esc(S.cfg.agencia)}</b></p>` : ''}<p class="edoc-kicker">Liquidación de gastos</p><h3>N° ${esc(q.nro)}</h3></div><p class="small muted" style="text-align:right">${fd(q.fecha)}<br>Montos en Gs.</p></div>
+    <div class="lh"><img class="doclogo" src="${logoSrc()}" alt="${esc(S.cfg.agencia || 'Pecomex')}"><p class="small muted">${S.cfg.agencia ? `<b class="ink">${esc(S.cfg.agencia)}</b><br>` : ''}${fd(q.fecha)}<br>Montos en Gs.</p></div>
+    <div class="edoc-head"><p class="edoc-kicker">Liquidación de gastos</p><h3>N° ${esc(q.nro)}</h3></div>
     <dl class="kv lqkv">${kv.map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('')}</dl>
     ${q.mercaderia ? `<p class="small"><span class="muted">Mercadería:</span> <b>${esc(q.mercaderia)}</b></p>` : ''}
     <table class="tbl"><thead><tr><th>Detalle de gastos</th><th>Gs.</th></tr></thead><tbody>
@@ -639,6 +796,7 @@ function lqDoc(o) {
     <p class="small"><span class="muted">Son guaraníes:</span> <b>${letras(L.total)}.-</b></p>
     ${fac.length ? `<div class="lqfac"><p class="edoc-kicker">A facturar</p><table class="tbl"><tbody>${fac.map(l => `<tr><td>${esc(l.c)}</td><td>${dots(Math.round(l.m * 1.1))}</td></tr>`).join('')}
       <tr class="tot"><td>Total a facturar</td><td>${dots(L.sv + L.iva)}</td></tr><tr><td>I.V.A. incluido (10 %)</td><td>${dots(L.iva)}</td></tr></tbody></table></div>` : ''}
+    <div class="docband" aria-hidden="true"></div>
   </div>`;
 }
 function lqTxt(o) {
@@ -698,13 +856,15 @@ function datosCard() {
 function estadoDoc(c, k) {
   const rows = saldoRows(c.id), tot = sum(rows, r => r.k.saldo);
   return `<div class="card edoc print-area">
-    <div class="edoc-head"><div><p class="edoc-kicker">Estado de cuenta</p><h3>${esc(c.nombre)}</h3><p class="mono small muted">RUC ${esc(c.ruc)}</p></div><p class="small muted" style="text-align:right">Al ${fd(iso(new Date()))}<br>Montos en Gs.</p></div>
+    <div class="lh"><img class="doclogo" src="${logoSrc()}" alt="${esc(S.cfg.agencia || 'Pecomex')}"><p class="small muted">Al ${fd(iso(new Date()))}<br>Montos en Gs.</p></div>
+    <div class="edoc-head"><p class="edoc-kicker">Estado de cuenta</p><h3>${esc(c.nombre)}</h3><p class="mono small muted">${c.ruc ? 'RUC ' + esc(c.ruc) : 'RUC sin cargar'}</p></div>
     ${rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Operación</th><th class="hm">Total</th><th class="hm">Cobrado</th><th>Saldo</th></tr></thead><tbody>
       ${rows.map(({ o, k }) => `<tr><td>${esc(o.desc)}<span class="sub mono">${esc(o.ref)} · ${o.estado === 'Abierta' ? 'en trámite' : 'cerrada el ' + fd(o.cierre)}</span><span class="sub mono om">Total ${dots(k.total)} · cobrado ${dots(k.c)}</span></td><td class="hm">${dots(k.total)}</td><td class="hm">${dots(k.c)}</td><td><b>${dots(k.saldo)}</b></td></tr>`).join('')}
       <tr class="tot"><td>Saldo total</td><td class="hm">${dots(sum(rows, r => r.k.total))}</td><td class="hm">${dots(sum(rows, r => r.k.c))}</td><td>${dots(tot)}</td></tr></tbody></table></div>
       ${k.total ? `<p class="small" style="margin-top:12px">De las operaciones cerradas: ${k.b.map((v, i) => v ? `${BL[i].toLowerCase()} <b class="mono">${gs(v)}</b>` : '').filter(Boolean).join(' · ')}.</p>` : ''}`
       : '<p class="empty">No tiene saldo pendiente. ¡Al día!</p>'}
     <p class="small muted edoc-foot">Total = gastos pagados por cuenta del cliente + honorario. Ante cualquier duda sobre un monto, consultanos.</p>
+    <div class="docband" aria-hidden="true"></div>
   </div>`;
 }
 function vCobros() {
@@ -736,7 +896,10 @@ function render() {
 let tt;
 function toast(t) { const e = $('#toast'); e.textContent = t; e.hidden = false; clearTimeout(tt); tt = setTimeout(() => { e.hidden = true; }, 2200); }
 const money = v => parseInt(String(v).replace(/\D/g, ''), 10) || 0;
-window.addEventListener('hashchange', () => { if (/^op-/.test(location.hash.slice(1))) ui.seg = 'resumen'; ui.editMov = null; ui.lqView = null; render(); });
+window.addEventListener('hashchange', () => {
+  if (/^op-/.test(location.hash.slice(1))) ui.seg = ui.go === 'lqdoc' ? 'lqc' : 'resumen';
+  ui.lqView = ui.go === 'lqdoc' ? 'doc' : null; ui.go = null; ui.editMov = null; render();
+});
 /* Liquidación: se guarda mientras se escribe, sin redibujar toda la pantalla */
 function leerLq(f) {
   const o = S.ops.find(x => x.id === +f.dataset.op), q = o.lq;
@@ -787,6 +950,14 @@ document.addEventListener('click', e => {
     else if (act === 'lqPrint') window.print();
     // lqWa: el enlace de WhatsApp se abre solo
   }
+  else if (a.dataset.a === 'logoReset') { S.cfg.logo = null; save(); render(); toast('Se usa el logo de Pecomex'); }
+  else if (a.dataset.a === 'lxCancel') { ui.lx = null; render(); }
+  else if (a.dataset.a === 'lxOk') {
+    const o = cargarLx(); if (!o) return;
+    toast(`Liquidación N° ${o.lq.nro} cargada desde Excel`);
+    if (location.hash === '#op-' + o.id) { ui.seg = 'lqc'; ui.lqView = 'doc'; render(); window.scrollTo(0, 0); }
+    else { ui.go = 'lqdoc'; location.hash = '#op-' + o.id; } // el cambio de pantalla abre la liquidación
+  }
   else if (a.dataset.a === 'pvWa') { // arma el enlace con el monto escrito justo antes de abrir WhatsApp
     const o = S.ops.find(x => x.id === id), m = money($('#pv-m').value);
     if (!m) { e.preventDefault(); return toast('Ingresá el monto a solicitar'); }
@@ -827,6 +998,8 @@ document.addEventListener('change', e => {
     }).catch(() => toast('Ese archivo no es un respaldo de Pecomex'));
     e.target.value = '';
   }
+  if (e.target.id === 'logoFile' && e.target.files[0]) cargarLogo(e.target.files[0]);
+  if (e.target.classList.contains('lxfile') && e.target.files[0]) { onXlsx(e.target.files[0], +e.target.dataset.op || null); e.target.value = ''; }
   if (e.target.id === 'pv-m') { const m = money(e.target.value); e.target.value = m ? dots(m) : ''; }
   if (e.target.classList.contains('lq-m')) { const m = money(e.target.value); e.target.value = m ? dots(m) : ''; } // formato 1.234.567 al salir del campo
 });

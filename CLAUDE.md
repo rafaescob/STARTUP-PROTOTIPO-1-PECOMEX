@@ -14,6 +14,18 @@ Prototipo en HTML/CSS/JS puro (sin framework), datos de ejemplo ficticios, guard
 - Cliente: `{id, nombre, ruc, tel?, envios?}`. `tel` se usa para abrir WhatsApp directo (0981… → 595981…). `envios` = `[{f (ISO), via, saldo}]`, máximo 20. Un cliente con operaciones no se puede borrar. Borrar pide confirmación.
 - Las fechas de "hoy" se calculan en hora local (`iso()`), no UTC.
 
+## Diseño (identidad Pecomex)
+- Colores del logo: azul petróleo `#17607F`/`#1E7A9C` (principal) y naranja `#EE8A2F` (solo detalles: pestaña activa y la franja diagonal `--band` del membrete). Fondo `#F3F6F8`, tinta `#14232E`. Tema oscuro incluido.
+- Tipografía: Manrope (app; montos con números tabulares, sin monoespaciada) y Source Serif 4 solo en títulos de documentos (`.edoc-kicker`). Títulos sin mayúsculas forzadas.
+- `icons/logo-pecomex.png` (recortado del membrete, fondo transparente; **sin** teléfonos ni correo porque el repo es público). Íconos de la app = el globo.
+- Documentos (estado de cuenta y liquidación) con membrete: logo, título en serif y franja de la marca al pie; se imprimen con colores. Cada agencia puede subir su propio logo (`S.cfg.logo`, se achica a 600×220) desde "Datos de la liquidación".
+
+## Importar liquidación hecha en Excel (.xlsx)
+- Sin librerías: `unzip()` lee el ZIP con `DecompressionStream('deflate-raw')` y `DOMParser` lee los XML (primera hoja, textos compartidos, valores calculados de las fórmulas; celdas `#REF!` se ignoran).
+- `parseLiqXlsx()` busca etiquetas del encabezado (PARA, LIQ. N°, CONSIGNADO, FECHA, DESPACHO N°, VALOR IMP., CAMBIO, PROCEDENCIA, PAÍS DE ORIGEN, ADUANA) y toma el valor a su derecha. El detalle va desde "Detalle de gastos" hasta "TOTAL"; la columna de montos es la del TOTAL. Primera fila sin monto = mercadería. Clasifica por palabras: tributos (`RE_TRIB`), servicios con IVA (`RE_SERV`), resto gastos de terceros. El I.V.A. que viene después de los servicios se ignora (se recalcula). Lee el "ANTICIPO" de debajo del total.
+- Vista previa con controles (total recalculado vs. planilla) → carga en la operación con el mismo despacho o crea una operación cerrada (cliente por nombre; si es nuevo queda sin RUC). Opción de registrar el anticipo como cobro.
+- Probado con la planilla real 284/26: total 22.895.565 igual al de la planilla, saldo a favor 1.222.033.
+
 ## Flujo de una operación
 1. **Abierta:** en Resumen, "Provisión de fondos": tributos y gastos estimados (máx. entre `estG` y `trib`) + honorario con IVA − cobros = falta recibir. Se pide por WhatsApp con monto editable y datos bancarios (`S.cfg.banco`); cada pedido queda en `o.prov = [{f, m}]`. Inicio alerta cuando la agencia está financiando (gastos > cobros).
 2. **"Terminar despacho y liquidar":** cierra la operación (fecha de cierre = hoy), arma la liquidación y abre la pestaña.
