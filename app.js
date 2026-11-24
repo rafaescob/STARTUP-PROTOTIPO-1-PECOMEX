@@ -241,7 +241,7 @@ function render() {
   else if (h === 'clientes') { html = vClientes(); tab = h; }
   else if (h === 'cobros') { html = vCobros(); tab = h; }
   else { html = vInicio(); tab = 'inicio'; }
-  $('#app').innerHTML = html;
+  $('#app').innerHTML = html; $('#app').dataset.v = m ? m[1] : h;
   document.querySelectorAll('#tabs a').forEach(a => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   if (lastHash !== h) { window.scrollTo(0, 0); if (m && m[1] === 'op') ui.seg = ui.seg || 'resumen'; }
   lastHash = h;

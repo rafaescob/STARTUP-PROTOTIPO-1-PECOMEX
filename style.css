@@ -127,4 +127,25 @@ details.card[open]>summary{margin-bottom:14px}
 .foot button{align-self:flex-start;background:none;border:0;padding:6px 0;color:var(--accent);cursor:pointer;font-size:13px;text-decoration:underline}
 @media (prefers-reduced-motion:no-preference){a.row,.btn,.chip{transition:background .15s}}
 
+/* Tableta: columna más ancha. Computadora: barra lateral y dos columnas. */
+@media (min-width:600px){
+  .wrap{max-width:720px}
+  .tabs{width:min(100%,720px)}
+}
+@media (min-width:900px){
+  body{padding-left:230px}
+  .wrap{max-width:1080px;padding-block:36px 56px}
+  .tabs{left:0;top:0;bottom:0;transform:none;width:230px;display:flex;flex-direction:column;gap:4px;border-top:0;border-right:1px solid var(--line);padding:24px 12px}
+  .tabs::before{content:"Pecomex";font-family:var(--display);font-weight:700;font-size:20px;padding:4px 12px 20px}
+  .tabs a{flex-direction:row;justify-content:flex-start;gap:12px;font-size:15px;padding:10px 12px;min-height:44px}
+  .tabs a[aria-current="page"]{background:var(--accent-tint)}
+  .toast{bottom:28px;left:calc(50% + 115px)}
+  #app{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px;align-items:start}
+  #app>*{grid-column:1/-1}
+  #app[data-v="inicio"]>.sec,#app[data-v="cliente"]>.sec{grid-column:auto}
+  #app[data-v="inicio"]>.sec:nth-of-type(1){margin-top:26px}
+  .top .brand{display:none}
+  h1{font-size:30px}
+}
+
 :root{padding-top:env(safe-area-inset-top,0px)}
