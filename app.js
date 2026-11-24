@@ -56,6 +56,10 @@
     out.flete = num(labelValue(head, /^FLETE :$/));
     out.seguro = num(labelValue(head, /^SEGURO FACTURA$/));
     out.imponibleGs = num(labelValue(head, /^VALOR IMPONIBLE$/));
+    if (!out.imponibleGs) { // respaldo: valor más cercano a la columna de la etiqueta, aunque esté algo desplazado
+      const k = findRow(head, /^VALOR IMPONIBLE$/);
+      if (k >= 0) { const x0 = head[k].its.find(it => /^VALOR IMPONIBLE$/.test(t(it))).x; for (let j = k + 1; j < Math.min(head.length, k + 4) && !out.imponibleGs; j++) { const c = head[j].its.filter(it => isNum(t(it)) && Math.abs(it.x - x0) < 60).sort((a, b) => Math.abs(a.x - x0) - Math.abs(b.x - x0))[0]; if (c) out.imponibleGs = num(t(c)); } }
+    }
     out.cambio = num(labelValue(head, /^CAMBIO FACTURA$/));
     r = head[findRow(head, /^VIA$/)]; out.via = r ? nextTo(r, /^VIA$/) : null;
     r = head[findRow(head, /^CANT\.BULTOS$/)]; out.bultos = r ? num(lastOf(r)) : null;
@@ -118,6 +122,7 @@
       const imp = all.filter(s => /,\d{2}$/.test(s) && isNum(s)).map(num).sort((a, b) => b - a)[0];
       if (nro || imp) out.factura = { nro, fecha, importe:imp ?? null };
     }
+    if (!out.imponibleGs) out.imponibleGs = out.items.reduce((a, i) => a + (i.imponibleGs || 0), 0) || null;
     if (!out.items.length) throw new Error('No encontré ítems en la hoja. ¿Es la hoja completa?');
     return out;
   }
@@ -301,6 +306,7 @@ function impPreview(d) {
       <dt>Cliente (importador)</dt><dd>${esc(tcase(d.importador.nombre))}<br><span class="mono small muted">RUC ${esc(rucFmt(d.importador.ruc))}</span></dd>
       <dt>Proveedor</dt><dd>${esc(tcase(d.vendedor))}</dd>
       <dt>Valor factura</dt><dd class="mono">USD ${dec(d.valorFactura || 0)}${d.condVenta ? ' · ' + esc(d.condVenta) : ''}</dd>
+      <dt>Valor imponible</dt><dd class="mono">${gs(d.imponibleGs || 0)}<br><span class="small muted">cambio ${dec(d.cambio || 0)}</span></dd>
       <dt>Ítems</dt><dd class="mono">${d.items.length}</dd>
       <dt>Se paga en efectivo</dt><dd class="mono"><b>${gs(d.total ? d.total.trib : 0)}</b></dd>
       <dt>Garantizado</dt><dd class="mono">${gs(d.total ? d.total.gar : 0)}</dd></dl>
