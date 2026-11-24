@@ -182,6 +182,21 @@ details.card[open]>summary{margin-bottom:14px}
 @media (max-width:599px){.edoc .hm{display:none}.edoc .om{display:block}}
 .cm{margin-top:28px}
 
+/* Liquidación de gastos */
+.lqgrp{display:grid;gap:8px}
+.lqgrp h3{font-size:15px;margin-bottom:2px}
+.lqline{display:grid;grid-template-columns:minmax(0,1fr) 124px 36px;gap:6px;align-items:center}
+.lqline input{min-height:40px!important;padding:8px 10px!important;font-size:15px!important}
+.lqline .lq-m{text-align:right}
+@media (max-width:420px){.lqline{grid-template-columns:minmax(0,1fr) 106px 34px;gap:5px}.lqline input{padding:8px!important}}
+.x{width:36px;height:40px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.lqkv{grid-template-columns:auto 1fr;font-size:13.5px}
+.lqkv dd{text-align:left}
+.tbl tr.grp td{font-family:var(--body);font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding-top:14px}
+.lqfac{border:1px dashed var(--line);border-radius:10px;padding:12px}
+.lqdoc .tbl td:first-child{white-space:normal}
+
 /* Impresión: solo el estado de cuenta, en blanco y negro */
 @media print{
   html:root:not(#_){--paper:#fff;--card:#fff;--ink:#000;--muted:#444;--line:#bbb;--accent:#000;color-scheme:light;padding:0}

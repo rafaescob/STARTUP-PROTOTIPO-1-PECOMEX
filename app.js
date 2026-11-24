@@ -196,8 +196,12 @@ function seed() {
     ]
   };
 }
+/* Configuración de la agencia: plantilla de la liquidación y numeración correlativa */
+const cfg0 = () => ({ agencia:'', liqN:{}, plantilla:{
+  gastos:['Gastos de origen', 'Consularización de documentos', 'Centro de Despachantes', 'Tasa portuaria', 'Marina Mercante', 'Retiro de guía', 'Ministerio de Relaciones Exteriores', 'Fotocopias', 'Diferencia de peso'],
+  servicios:[{ c:'Gastos de despacho', m:390000 }, { c:'Gastos de verificación', m:250000 }] } });
 let S = load();
-function load() { try { const r = localStorage.getItem(KEY); if (r) return JSON.parse(r); } catch (e) {} return seed(); }
+function load() { let s; try { const r = localStorage.getItem(KEY); if (r) s = JSON.parse(r); } catch (e) {} s = s || seed(); s.cfg = s.cfg || cfg0(); return s; }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 const ui = { seg:'resumen', filtro:'todas' };
 
@@ -205,8 +209,9 @@ const ui = { seg:'resumen', filtro:'todas' };
 const sum = (a, f) => a.reduce((x, y) => x + f(y), 0);
 function calc(o) {
   const g = sum(o.movs.filter(m => m.t === 'g'), m => m.m), p = sum(o.movs.filter(m => m.t === 'p'), m => m.m), c = sum(o.movs.filter(m => m.t === 'c'), m => m.m);
-  const total = g + o.hon, saldo = total - c;
-  return { g, p, c, total, saldo, margen:o.hon - p, dif:g - o.estG,
+  const L = o.lq && o.lq.emitida ? lqTot(o) : null; // con liquidación emitida, el total es el de la liquidación
+  const total = L ? L.total : g + o.hon, saldo = total - c;
+  return { g, p, c, total, saldo, margen:(L ? L.sv : o.hon) - p, dif:g - o.estG,
     adel:o.estado === 'Abierta' ? Math.max(0, g - c) : 0,
     xcobrar:o.estado === 'Cerrada' ? Math.max(0, saldo) : 0,
     dias:o.cierre ? days(o.cierre) : 0 };
@@ -402,7 +407,8 @@ function crearDesdeHoja(d, hon, estG) {
     liq:d.liquidacion.map(r => [r.codigo + ' ' + sent(r.concepto), r.trib, r.gar]),
     items:d.items.map(i => [String(i.posicion || '').slice(0, 10), sent(i.descripcion || ''), i.fob || 0, i.imponibleGs || 0, i.arancel || 0]),
     meta:{ via:d.via, bultos:d.bultos, kiloBruto:d.kiloBruto, kiloNeto:d.kiloNeto, deposito:d.deposito, canal:d.canal, seguro:d.seguro, condVenta:d.condVenta, despachante:d.despachante && d.despachante.nombre,
-      factura:d.factura, manifiestos:d.manifiestos, camiones:d.transporte.length },
+      factura:d.factura, manifiestos:d.manifiestos, camiones:d.transporte.length,
+      origen:d.items[0] && tcase(d.items[0].origen), procedencia:d.items[0] && tcase(d.items[0].procedencia) },
     docs:{ factura:false, crt:false, packing:false, mandato:false, hoja:true }, movs:[] });
   return id;
 }
@@ -487,6 +493,8 @@ function vOp(id) {
       <label>Concepto<input id="mv-c" required placeholder="Ej. Almacenaje depósito"></label>
       <label>Monto (Gs.)<input id="mv-m" inputmode="numeric" required placeholder="1.500.000"></label>
       <button class="btn acc" type="submit">Agregar</button></form></details>`;
+  } else if (ui.seg === 'lqc') {
+    body = vLiq(o);
   } else {
     const N = { factura:'Factura comercial', crt:'CRT / conocimiento de embarque', packing:'Packing list', mandato:'Mandato del cliente', hoja:'Hoja de despacho' };
     body = `<div class="list">${Object.keys(N).map(d => `<button class="doc" type="button" data-a="doc" data-id="${o.id}" data-v="${d}"><span class="box ${o.docs[d] ? 'on' : ''}">${o.docs[d] ? I.check : ''}</span><span style="flex:1">${N[d]}</span>${pill(o.docs[d] ? 'Recibido' : 'Falta', o.docs[d] ? 'ok' : 'bad')}</button>`).join('')}</div>
@@ -495,8 +503,8 @@ function vOp(id) {
   return `<a class="back" href="#operaciones">← Operaciones</a>
   <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div style="min-width:0"><h1>${esc(o.desc)}</h1><p class="muted small mono" style="margin-top:4px">${esc(o.ref)}</p></div>${pill(o.estado, o.estado === 'Abierta' ? '' : 'ok')}</div>
   <p class="small" style="margin:8px 0 14px"><a href="#cliente-${c.id}" style="color:var(--accent)">${esc(c.nombre)}</a> · ${esc(o.reg)} · ${esc(o.aduana)} · ${fd(o.fecha)}</p>
-  <div class="segs">${sg('resumen', 'Resumen')}${sg('liq', 'Hoja de despacho')}${sg('movs', 'Gastos y cobros')}${sg('docs', 'Documentos')}</div>
-  <div class="sec" style="margin-top:14px">${body}</div>`;
+  <div class="segs">${sg('resumen', 'Resumen')}${sg('liq', 'Hoja de despacho')}${sg('movs', 'Gastos y cobros')}${sg('lqc', 'Liquidación')}${sg('docs', 'Documentos')}</div>
+  <div class="sec${ui.seg === 'lqc' && o.lq && (ui.lqView || (o.lq.emitida ? 'doc' : 'edit')) === 'doc' ? ' sec-edoc' : ''}" style="margin-top:14px">${body}</div>`;
 }
 function vClientes() {
   const cs = S.clientes.slice().sort((a, b) => cliCalc(b.id).total - cliCalc(a.id).total);
@@ -527,6 +535,113 @@ function vCliente(id) {
     ${ops.length ? `<p class="muted small">Para borrar este cliente primero hay que borrar sus ${ops.length} operación(es).</p>` : ''}
   </form></details></div>`;
 }
+/* ---------- Liquidación de gastos al cliente ----------
+   o.lq = { nro, fecha, consignado, mercaderia, procedencia, origen, emitida, t:[tributos], g:[gastos de terceros], s:[servicios con IVA] }
+   Cada línea es { c:concepto, m:monto }; la del honorario lleva h:true. Las líneas en 0 no salen en el documento. */
+const LQG = { t:'Tributos (hoja de despacho)', g:'Gastos de terceros', s:'Servicios de la agencia (+ IVA 10 %)' };
+function lqTot(o) {
+  const q = o.lq, s = a => sum(a, l => +l.m || 0);
+  const t = s(q.t), g = s(q.g), sv = s(q.s), iva = Math.round(sv * 0.1), total = t + g + sv + iva;
+  const ant = sum(o.movs.filter(m => m.t === 'c'), m => m.m);
+  return { t, g, sv, iva, total, ant, saldo:total - ant };
+}
+/* Número en letras (guaraníes, sin decimales) */
+function letras(n) {
+  n = Math.round(Math.abs(n)); if (!n) return 'CERO';
+  const U = ['', 'UN', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE', 'VEINTIÚN', 'VEINTIDÓS', 'VEINTITRÉS', 'VEINTICUATRO', 'VEINTICINCO', 'VEINTISÉIS', 'VEINTISIETE', 'VEINTIOCHO', 'VEINTINUEVE'];
+  const D = ['', '', '', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+  const C = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+  const tres = (x, fin) => { // 1 a 999; "fin" = último grupo (dice UNO en vez de UN)
+    if (x === 100) return 'CIEN';
+    const r = x % 100; let t = '';
+    if (r) t = r < 30 ? U[r] : D[Math.floor(r / 10)] + (r % 10 ? ' Y ' + U[r % 10] : '');
+    if (fin) t = t.replace(/UN$/, 'UNO').replace(/VEINTIÚN$/, 'VEINTIUNO');
+    return [C[Math.floor(x / 100)], t].filter(Boolean).join(' ');
+  };
+  const seis = (x, fin) => { const m = Math.floor(x / 1000), r = x % 1000; return [m ? (m === 1 ? 'MIL' : tres(m) + ' MIL') : '', r ? tres(r, fin) : ''].filter(Boolean).join(' '); };
+  const mi = Math.floor(n / 1e6), r = n % 1e6;
+  return [mi ? (mi === 1 ? 'UN MILLÓN' : seis(mi) + ' MILLONES') : '', r ? seis(r, true) : ''].filter(Boolean).join(' ');
+}
+/* Arma la liquidación con lo que ya se sabe; lo demás queda para completar a mano */
+function armarLiq(o) {
+  const cf = S.cfg, yy = String(new Date().getFullYear()).slice(2), n = (cf.liqN[yy] || 0) + 1; cf.liqN[yy] = n;
+  const sinCod = s => String(s).replace(/^\d{3}\s*-?\s*/, '');
+  const t = o.liq ? o.liq.filter(r => r[1] > 0).map(r => ({ c:sinCod(r[0]), m:r[1] })) : [];
+  const gm = o.movs.filter(m => m.t === 'g'), esTrib = m => /^tributos/i.test(m.c);
+  if (!o.liq) gm.filter(esTrib).forEach(m => t.push({ c:'Tributos según liquidación de aduana', m:m.m }));
+  const g = cf.plantilla.gastos.map(c => ({ c, m:0 }));
+  gm.filter(m => !esTrib(m)).forEach(m => { const l = g.find(x => x.c.toLowerCase() === m.c.toLowerCase()); if (l) l.m += m.m; else g.push({ c:m.c, m:m.m }); });
+  const s = cf.plantilla.servicios.map(x => ({ c:x.c, m:x.m })).concat([{ c:'Honorarios profesionales', m:o.hon, h:true }]);
+  o.lq = { nro:`${n}/${yy}`, fecha:iso(new Date()), consignado:'Al mismo.', mercaderia:o.desc, procedencia:(o.meta && o.meta.procedencia) || '', origen:(o.meta && o.meta.origen) || '', emitida:null, t, g, s };
+}
+function lqTotHtml(o) {
+  const L = lqTot(o), reg = sum(o.movs.filter(m => m.t === 'g'), m => m.m), dg = L.t + L.g - reg;
+  return `<dl class="kv"><dt>Tributos</dt><dd class="mono">${gs(L.t)}</dd><dt>Gastos de terceros</dt><dd class="mono">${gs(L.g)}</dd><dt>Servicios de la agencia</dt><dd class="mono">${gs(L.sv)}</dd><dt>IVA 10 % sobre servicios</dt><dd class="mono">${gs(L.iva)}</dd>
+    <dt><b>Total</b></dt><dd class="mono"><b>${gs(L.total)}</b></dd><dt>Anticipo recibido</dt><dd class="mono">−${dots(L.ant)}</dd>
+    <dt><b>${L.saldo >= 0 ? 'Saldo a cobrar' : 'Saldo a favor del cliente'}</b></dt><dd class="mono"><b>${gs(Math.abs(L.saldo))}</b></dd></dl>
+    <div class="note ${dg === 0 ? 'good' : 'warn'}" style="margin-top:12px">${dg === 0 ? '✓ Tributos y gastos coinciden con lo registrado en "Gastos y cobros".'
+      : `Tributos y gastos de la liquidación: <b class="mono">${gs(L.t + L.g)}</b>. Registrado en "Gastos y cobros": <b class="mono">${gs(reg)}</b>. Diferencia <b class="mono">${gs(dg)}</b>: revisá si falta cargar algo de un lado o del otro.`}</div>`;
+}
+function vLiq(o) {
+  if (!o.lq) return `<div class="card"><h3>Liquidación de gastos al cliente</h3>
+    <p class="small muted" style="margin:6px 0 14px">Se arma sola con lo que ya está cargado: tributos de la hoja de despacho, gastos registrados, servicios de la agencia y honorario por escala. Después completás a mano lo que falte (tasa portuaria, fotocopias, etc.).</p>
+    <button class="btn acc" type="button" data-a="lqNew" data-id="${o.id}" style="width:100%">Armar liquidación</button></div>`;
+  const q = o.lq, view = ui.lqView || (q.emitida ? 'doc' : 'edit');
+  const sg = (v, t) => `<button class="chip" type="button" data-a="lqView" data-v="${v}" aria-pressed="${view === v}">${t}</button>`;
+  const top = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="chips">${sg('edit', 'Completar')}${sg('doc', 'Ver documento')}</div>${q.emitida ? pill('Emitida el ' + fd(q.emitida), 'ok') : pill('Borrador', 'warn')}</div>`;
+  if (view === 'doc') return top + lqDoc(o) + `<div class="btns"><a class="btn acc" data-a="lqWa" target="_blank" rel="noopener" href="https://wa.me/${waNum(cliente(o.cl).tel)}?text=${encodeURIComponent(lqTxt(o))}">Enviar por WhatsApp</a><button class="btn alt" type="button" data-a="lqPrint">Imprimir o guardar PDF</button></div>
+    <button class="btn ${q.emitida ? 'alt' : ''}" type="button" data-a="lqEmit" data-id="${o.id}">${q.emitida ? 'Volver a borrador' : 'Marcar como emitida'}</button>
+    <p class="muted small">${q.emitida ? 'Emitida: el saldo del cliente y el estado de cuenta usan el total de esta liquidación.' : 'Al marcarla como emitida, el saldo del cliente pasa a usar el total de esta liquidación.'}</p>`;
+  const line = (k, l, i) => `<div class="lqline" data-g="${k}" data-i="${i}"><input class="lq-c" aria-label="Concepto" placeholder="Concepto" value="${esc(l.c)}"><input class="lq-m mono" aria-label="Monto en Gs." inputmode="numeric" placeholder="0" value="${l.m ? dots(l.m) : ''}"><button class="x" type="button" data-a="lqDel" data-v="${k}:${i}" aria-label="Quitar línea">×</button></div>`;
+  const H = honorario(o.imponible, esExport(o.reg));
+  const grp = k => `<div class="card lqgrp"><h3>${LQG[k]}</h3>${q[k].map((l, i) => line(k, l, i)).join('') || '<p class="muted small">Sin líneas.</p>'}
+    ${k === 's' && H.tramo ? `<p class="small muted">Honorario según escala sobre el valor imponible: <b class="mono">${gs(H.total)}</b>. Si cobrás extras, sumalos en la línea del honorario o agregá otra línea.</p>` : ''}
+    ${k === 't' && !o.liq ? '<p class="small muted">Esta operación no tiene hoja de despacho importada: cargá los tributos a mano.</p>' : ''}
+    <button class="btn alt" type="button" data-a="lqAdd" data-v="${k}">+ Agregar línea</button></div>`;
+  return top + `<form class="form" id="lqForm" data-op="${o.id}" autocomplete="off">
+    <details class="card"><summary>Datos de la liquidación · N° ${esc(q.nro)}</summary><div class="form">
+      <label>Nombre de la agencia (encabezado de todas las liquidaciones)<input id="lq-agencia" value="${esc(S.cfg.agencia)}" placeholder="Ej. Agencia de Despachos …"></label>
+      <div class="two"><label>Liquidación N°<input id="lq-nro" value="${esc(q.nro)}"></label><label>Fecha<input id="lq-fecha" type="date" value="${q.fecha}"></label></div>
+      <label>Consignado<input id="lq-consignado" value="${esc(q.consignado)}"></label>
+      <label>Mercadería<input id="lq-mercaderia" value="${esc(q.mercaderia)}"></label>
+      <div class="two"><label>Procedencia<input id="lq-procedencia" value="${esc(q.procedencia)}"></label><label>País de origen<input id="lq-origen" value="${esc(q.origen)}"></label></div>
+    </div></details>
+    ${grp('t')}${grp('g')}${grp('s')}
+    <div class="card" id="lq-tot">${lqTotHtml(o)}</div>
+    <p class="muted small">Se guarda solo mientras escribís. Las líneas en 0 no aparecen en el documento.</p>
+    <div class="btns"><button class="btn acc" type="button" data-a="lqView" data-v="doc">Ver documento</button><button class="btn alt" type="button" data-a="lqTpl">Guardar como plantilla</button></div>
+    <button class="btn bad" type="button" data-a="lqDelAll" data-id="${o.id}">Borrar y volver a armar</button>
+  </form>`;
+}
+function lqDoc(o) {
+  const q = o.lq, L = lqTot(o), c = cliente(o.cl);
+  const rows = k => q[k].filter(l => +l.m).map(l => `<tr><td>${esc(l.c || 'Sin concepto')}</td><td>${dots(l.m)}</td></tr>`).join('');
+  const sec = k => rows(k) ? `<tr class="grp"><td colspan="2">${LQG[k].replace(' (hoja de despacho)', '').replace(' (+ IVA 10 %)', '')}</td></tr>${rows(k)}` : '';
+  const kv = [['Para', c.nombre], ['Consignado', q.consignado], ['Despacho N°', o.ref], ['Aduana', o.aduana], ['Valor imponible', o.imponible ? gs(o.imponible) : ''], ['Tipo de cambio', o.cambio ? dec(o.cambio) : ''], ['Procedencia', q.procedencia], ['País de origen', q.origen]].filter(r => r[1]);
+  const fac = q.s.filter(l => +l.m);
+  return `<div class="card edoc print-area lqdoc">
+    <div class="edoc-head"><div>${S.cfg.agencia ? `<p class="small"><b>${esc(S.cfg.agencia)}</b></p>` : ''}<p class="edoc-kicker">Liquidación de gastos</p><h3>N° ${esc(q.nro)}</h3></div><p class="small muted" style="text-align:right">${fd(q.fecha)}<br>Montos en Gs.</p></div>
+    <dl class="kv lqkv">${kv.map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('')}</dl>
+    ${q.mercaderia ? `<p class="small"><span class="muted">Mercadería:</span> <b>${esc(q.mercaderia)}</b></p>` : ''}
+    <table class="tbl"><thead><tr><th>Detalle de gastos</th><th>Gs.</th></tr></thead><tbody>
+      ${sec('t')}${sec('g')}${sec('s')}
+      ${L.iva ? `<tr><td>I.V.A. 10 % sobre servicios</td><td>${dots(L.iva)}</td></tr>` : ''}
+      <tr class="tot"><td>TOTAL</td><td>${dots(L.total)}</td></tr>
+      ${L.ant ? `<tr><td>Anticipo recibido</td><td>−${dots(L.ant)}</td></tr><tr class="tot"><td>${L.saldo >= 0 ? 'SALDO A COBRAR' : 'SALDO A FAVOR DEL CLIENTE'}</td><td>${dots(Math.abs(L.saldo))}</td></tr>` : ''}
+    </tbody></table>
+    <p class="small"><span class="muted">Son guaraníes:</span> <b>${letras(L.total)}.-</b></p>
+    ${fac.length ? `<div class="lqfac"><p class="edoc-kicker">A facturar</p><table class="tbl"><tbody>${fac.map(l => `<tr><td>${esc(l.c)}</td><td>${dots(Math.round(l.m * 1.1))}</td></tr>`).join('')}
+      <tr class="tot"><td>Total a facturar</td><td>${dots(L.sv + L.iva)}</td></tr><tr><td>I.V.A. incluido (10 %)</td><td>${dots(L.iva)}</td></tr></tbody></table></div>` : ''}
+  </div>`;
+}
+function lqTxt(o) {
+  const q = o.lq, L = lqTot(o), c = cliente(o.cl);
+  const ls = k => q[k].filter(l => +l.m).map(l => `• ${l.c}: ${gs(l.m)}`).join('\n');
+  return `Liquidación de gastos N° ${q.nro}${S.cfg.agencia ? ' · ' + S.cfg.agencia : ''}\n${c.nombre}\nDespacho ${o.ref} · ${fd(q.fecha)}\n\n` +
+    ['t', 'g', 's'].filter(k => ls(k)).map(k => ls(k)).join('\n') + (L.iva ? `\n• IVA 10 % sobre servicios: ${gs(L.iva)}` : '') +
+    `\n\nTotal: ${gs(L.total)}` + (L.ant ? `\nAnticipo recibido: ${gs(L.ant)}\n${L.saldo >= 0 ? 'Saldo a cobrar' : 'Saldo a su favor'}: ${gs(Math.abs(L.saldo))}` : '') + '\n\nGracias.';
+}
+
 /* Estado de cuenta con formato de documento (también es lo que se imprime) */
 function estadoDoc(c, k) {
   const rows = saldoRows(c.id), tot = sum(rows, r => r.k.saldo);
@@ -568,12 +683,21 @@ function render() {
 let tt;
 function toast(t) { const e = $('#toast'); e.textContent = t; e.hidden = false; clearTimeout(tt); tt = setTimeout(() => { e.hidden = true; }, 2200); }
 const money = v => parseInt(String(v).replace(/\D/g, ''), 10) || 0;
-window.addEventListener('hashchange', () => { if (/^op-/.test(location.hash.slice(1))) ui.seg = 'resumen'; ui.editMov = null; render(); });
+window.addEventListener('hashchange', () => { if (/^op-/.test(location.hash.slice(1))) ui.seg = 'resumen'; ui.editMov = null; ui.lqView = null; render(); });
+/* Liquidación: se guarda mientras se escribe, sin redibujar toda la pantalla */
+function leerLq(f) {
+  const o = S.ops.find(x => x.id === +f.dataset.op), q = o.lq;
+  f.querySelectorAll('.lqline').forEach(r => { const l = q[r.dataset.g][+r.dataset.i]; l.c = r.querySelector('.lq-c').value; l.m = money(r.querySelector('.lq-m').value); });
+  ['nro', 'fecha', 'consignado', 'mercaderia', 'procedencia', 'origen'].forEach(k => { const i = f.querySelector('#lq-' + k); if (i) q[k] = i.value; });
+  const ag = f.querySelector('#lq-agencia'); if (ag) S.cfg.agencia = ag.value;
+  save(); $('#lq-tot').innerHTML = lqTotHtml(o);
+}
+document.addEventListener('input', e => { const f = e.target.closest('#lqForm'); if (f) leerLq(f); });
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-a]'); if (!a) return;
   const v = a.dataset.v, id = +a.dataset.id;
   if (a.dataset.a === 'filtro') { ui.filtro = v; render(); }
-  else if (a.dataset.a === 'seg') { ui.seg = v; ui.editMov = null; render(); }
+  else if (a.dataset.a === 'seg') { ui.seg = v; ui.editMov = null; ui.lqView = null; render(); }
   else if (a.dataset.a === 'editMov') { ui.editMov = v ? +v : null; render(); const f = $('#me-c'); if (f) f.focus(); }
   else if (a.dataset.a === 'delMov') {
     const o = S.ops.find(x => x.id === id);
@@ -591,19 +715,38 @@ document.addEventListener('click', e => {
     if (!confirm(`¿Borrar el cliente "${c.nombre}"? No se puede deshacer.`)) return;
     S.clientes = S.clientes.filter(x => x.id !== id); save(); location.hash = '#clientes'; toast('Cliente borrado');
   }
+  else if (/^lq/.test(a.dataset.a)) {
+    const o = S.ops.find(x => x.id === +(location.hash.match(/^#op-(\d+)$/) || [])[1]); if (!o) return;
+    const act = a.dataset.a;
+    if (act === 'lqNew') { armarLiq(o); ui.lqView = 'edit'; save(); render(); toast(`Liquidación N° ${o.lq.nro} armada`); }
+    else if (act === 'lqView') { ui.lqView = v; render(); window.scrollTo(0, 0); }
+    else if (act === 'lqAdd') { o.lq[v].push({ c:'', m:0 }); save(); render(); const ls = document.querySelectorAll(`.lqline[data-g="${v}"] .lq-c`); if (ls.length) ls[ls.length - 1].focus(); }
+    else if (act === 'lqDel') { const [k, i] = v.split(':'); o.lq[k].splice(+i, 1); save(); render(); }
+    else if (act === 'lqTpl') {
+      S.cfg.plantilla = { gastos:o.lq.g.map(l => l.c.trim()).filter(Boolean), servicios:o.lq.s.filter(l => !l.h && l.c.trim()).map(l => ({ c:l.c.trim(), m:l.m })) };
+      save(); toast('Plantilla guardada: se usa en las próximas liquidaciones');
+    }
+    else if (act === 'lqDelAll') { if (!confirm('¿Borrar esta liquidación y volver a armarla desde cero? Se pierde lo que completaste a mano.')) return; o.lq = null; ui.lqView = null; save(); render(); }
+    else if (act === 'lqEmit') { o.lq.emitida = o.lq.emitida ? null : iso(new Date()); save(); render(); toast(o.lq.emitida ? 'Liquidación emitida' : 'Liquidación vuelta a borrador'); }
+    else if (act === 'lqPrint') window.print();
+    // lqWa: el enlace de WhatsApp se abre solo
+  }
   else if (a.dataset.a === 'wa') { registrar(cliente(id), 'Enviado por WhatsApp'); setTimeout(render, 400); } // el enlace se abre solo
   else if (a.dataset.a === 'print') { registrar(cliente(id), 'Impreso o guardado en PDF'); render(); setTimeout(() => window.print(), 50); }
   else if (a.dataset.a === 'doc') { const o = S.ops.find(x => x.id === id); o.docs[v] = !o.docs[v]; save(); render(); }
   else if (a.dataset.a === 'cerrar') { const o = S.ops.find(x => x.id === id); o.estado = 'Cerrada'; o.cierre = iso(new Date()); save(); render(); toast('Operación cerrada y facturada'); }
   else if (a.dataset.a === 'impCancel') { ui.imp = null; render(); }
-  else if (a.dataset.a === 'reset') { S = seed(); save(); render(); toast('Datos de ejemplo restablecidos'); }
+  else if (a.dataset.a === 'reset') { S = seed(); S.cfg = cfg0(); save(); render(); toast('Datos de ejemplo restablecidos'); }
   else if (a.dataset.a === 'copiar') {
     const ta = $('#estado-txt'); const fallback = () => { ta.closest('details').open = true; ta.focus(); ta.select(); toast('Texto seleccionado, copialo manualmente'); };
     const ok = () => { registrar(cliente(id), 'Texto copiado'); render(); toast('Estado de cuenta copiado'); };
     try { navigator.clipboard.writeText(ta.value).then(ok, fallback); } catch (err) { fallback(); }
   }
 });
-document.addEventListener('change', e => { if (e.target.id === 'impFile' && e.target.files[0]) onFile(e.target.files[0]); });
+document.addEventListener('change', e => {
+  if (e.target.id === 'impFile' && e.target.files[0]) onFile(e.target.files[0]);
+  if (e.target.classList.contains('lq-m')) { const m = money(e.target.value); e.target.value = m ? dots(m) : ''; } // formato 1.234.567 al salir del campo
+});
 document.addEventListener('submit', e => {
   e.preventDefault(); const f = e.target;
   if (f.id === 'impForm') {

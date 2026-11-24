@@ -13,6 +13,17 @@ Prototipo en HTML/CSS/JS puro (sin framework), datos de ejemplo ficticios, guard
 - Pantallas: Inicio (con gráfico de cobros de los últimos 6 meses), Operaciones (lista, importar PDF, nueva operación), Operación (Resumen con "Editar operación", Hoja de despacho, Gastos y cobros —tocar un movimiento para editarlo o borrarlo—, Documentos), Clientes, Cliente (estado de cuenta tipo documento, imprimir/PDF, registro de envíos, "Editar cliente"), Cobros.
 - Cliente: `{id, nombre, ruc, tel?, envios?}`. `tel` se usa para abrir WhatsApp directo (0981… → 595981…). `envios` = `[{f (ISO), via, saldo}]`, máximo 20. Un cliente con operaciones no se puede borrar. Borrar pide confirmación.
 - Las fechas de "hoy" se calculan en hora local (`iso()`), no UTC.
+
+## Liquidación de gastos al cliente (pestaña "Liquidación" de la operación)
+Copia el formato de la planilla Excel de la agencia. `o.lq = {nro, fecha, consignado, mercaderia, procedencia, origen, emitida, t, g, s}`; líneas `{c, m}` (la del honorario lleva `h:true`).
+- `t` tributos: de la hoja importada (columna tributado, sin código); si no hay hoja, del movimiento "Tributos pagados".
+- `g` gastos de terceros (sin IVA): plantilla de la agencia + movimientos `g` registrados. `s` servicios de la agencia (gastos de despacho, verificación, honorario) llevan IVA 10 %.
+- Total = t + g + s + IVA(s). Anticipo = suma de cobros `c`. Saldo a cobrar o a favor del cliente. "Son guaraníes" con `letras()`. Cuadro "A facturar": cada servicio × 1,1; IVA = total a facturar / 11.
+- Verificado con la planilla real (liq. 284/26): total 22.895.565, a facturar 1.283.865, IVA 116.715. La planilla original tenía el texto en letras desactualizado y celdas `#REF!`.
+- `S.cfg = {agencia, liqN:{aa:n}, plantilla:{gastos:[...], servicios:[{c,m}]}}`. Numeración correlativa N/AA. "Guardar como plantilla" guarda conceptos y montos de servicios.
+- Con la liquidación **emitida**, `calc()` usa su total para el saldo y el margen = servicios − costos propios.
+- Control: tributos + gastos de la liquidación vs. gastos registrados en "Gastos y cobros".
+- La planilla de ejemplo tiene datos reales de un cliente: **no subirla al repo**.
 - Modelo de operación: `{id, cl, ref, reg, aduana, desc, estado, fecha, cierre, usd, flete, cambio, imponible, trib, gar, estG, hon, liq, items, docs, movs, meta}`. Movimientos: `g` gasto por cuenta del cliente, `p` costo propio, `c` cobro. `liq` = `[concepto, tributado, garantizado]`; `items` = `[posición, descripción, USD, imponible Gs, arancel %]`.
 
 ## Importación de la hoja de despacho (PDF del sistema SOFIA)
