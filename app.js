@@ -295,6 +295,9 @@ function vInicio() {
   const alerts = [];
   S.clientes.forEach(c => { const k = cliCalc(c.id); if (k.b[2] > 0) alerts.push({ h:'#cliente-' + c.id, t:`${c.nombre} tiene ${gs(k.b[2])} con más de 60 días`, s:'Cobranza vencida', k:'bad' }); });
   ops.forEach((o, i) => { const m = Object.entries(o.docs).filter(([, v]) => !v).map(([n]) => ({ factura:'factura', crt:'CRT', packing:'packing list', mandato:'mandato', hoja:'hoja de despacho' }[n])); if (m.length && o.estado === 'Abierta') alerts.push({ h:'#op-' + o.id, t:`${o.desc}: falta ${m.join(' y ')}`, s:'Documentos pendientes', k:'warn' }); });
+  ops.forEach((o, i) => { if (ks[i].adel > 0) { const ps = o.prov || []; alerts.push({ h:'#op-' + o.id, t:`${o.desc}: la agencia está financiando ${gs(ks[i].adel)}`, s:ps.length ? `Provisión pedida el ${fd(ps[ps.length - 1].f)}` : 'Pedí la provisión de fondos', k:ps.length ? 'warn' : 'bad' }); } });
+  ops.forEach(o => { if (o.estado === 'Cerrada' && !(o.lq && o.lq.emitida) && (!o.cierre || days(o.cierre) <= 30)) alerts.push({ h:'#op-' + o.id, t:`${o.desc}: ${o.lq ? 'liquidación en borrador' : 'falta armar la liquidación'}`, s:'Despacho terminado sin liquidación emitida', k:'warn' }); });
+  if (!S.cfg.backup || days(S.cfg.backup) > 7) alerts.push({ h:'#datos', t:S.cfg.backup ? `Hace ${days(S.cfg.backup)} días que no descargás un respaldo` : 'Todavía no descargaste un respaldo de tus datos', s:'Tus datos están solo en este dispositivo', k:'warn' });
   ops.forEach((o, i) => { if (o.estado === 'Abierta' && o.estG > 0 && ks[i].dif > o.estG * 0.05) alerts.push({ h:'#op-' + o.id, t:`${o.desc}: gastos ${gs(ks[i].dif)} sobre lo estimado`, s:'Desvío de costos', k:'warn' }); });
   const abiertas = ops.filter(o => o.estado === 'Abierta');
   return `<div class="top"><div class="brand"><span class="mark">${I.mark}</span>Pecomex</div>${pill('Datos de ejemplo')}</div>
@@ -305,8 +308,9 @@ function vInicio() {
     ${agingBar(b)}
   </div></div>
   <div class="sec"><h2>Cobros por mes</h2>${chartCobros()}</div>
-  <div class="sec"><h2>Requieren atención</h2>${alerts.length ? `<div class="list">${alerts.map(a => `<a class="row" href="${a.h}"><div class="main"><span class="t">${esc(a.t)}</span><span class="s">${a.s}</span></div>${pill(a.k === 'bad' ? 'Urgente' : 'Revisar', a.k)}${I.chev}</a>`).join('')}</div>` : '<div class="card empty">Todo en orden por ahora.</div>'}</div>
+  <div class="sec"><h2>Requieren atención${alerts.length > 6 ? ` <span class="small" style="text-transform:none;letter-spacing:0">${alerts.length} en total</span>` : ''}</h2>${alerts.length ? `<div class="list">${alerts.sort((x, y) => (y.k === 'bad') - (x.k === 'bad')).slice(0, 6).map(a => `<a class="row" href="${a.h}"><div class="main"><span class="t">${esc(a.t)}</span><span class="s">${a.s}</span></div>${pill(a.k === 'bad' ? 'Urgente' : 'Revisar', a.k)}${I.chev}</a>`).join('')}</div>` : '<div class="card empty">Todo en orden por ahora.</div>'}</div>
   <div class="sec"><h2>Operaciones abiertas <a href="#operaciones" class="small" style="text-transform:none;letter-spacing:0;color:var(--accent)">Ver todas</a></h2><div class="list">${abiertas.map(opRow).join('') || '<div class="empty">No hay operaciones abiertas.</div>'}</div></div>
+  <div class="sec">${datosCard()}</div>
   <div class="foot"><p>Prototipo con datos de ejemplo y nombres ficticios. La operación con 13 ítems se armó a partir de una hoja de despacho real.</p><button data-a="reset" type="button">Restablecer datos de ejemplo</button></div>`;
 }
 
@@ -442,7 +446,10 @@ function vOp(id) {
       <tr class="tot"><td>Total a cobrar</td><td>${dots(o.estG + o.hon)}</td><td>${dots(k.total)}</td></tr></tbody></table></div>
       ${o.estG ? `<p class="small muted" style="margin-top:10px">Gastos ${k.dif > 0 ? 'por encima' : 'por debajo'} de lo estimado: <b class="mono">${gs(Math.abs(k.dif))}</b> (${(Math.abs(k.dif) / o.estG * 100).toFixed(1).replace('.', ',')}%)</p>` : ''}</div>
       <div class="card"><dl class="kv"><dt>Cobrado</dt><dd class="mono">${gs(k.c)}</dd><dt>Saldo</dt><dd class="mono"><b>${gs(k.saldo)}</b></dd><dt>Costos propios</dt><dd class="mono">${gs(k.p)}</dd><dt>Margen de la agencia</dt><dd class="mono"><b>${gs(k.margen)}</b></dd>${o.estado === 'Abierta' ? `<dt>Adelantado ahora</dt><dd class="mono">${gs(k.adel)}</dd>` : `<dt>Días desde el cierre</dt><dd class="mono">${k.dias}</dd>`}</dl></div>
-      ${o.estado === 'Abierta' ? '<button class="btn alt" type="button" data-a="cerrar" data-id="' + o.id + '">Marcar como cerrada y facturada</button>' : ''}
+      ${provCard(o)}
+      ${o.estado === 'Abierta' ? `<button class="btn" type="button" data-a="cerrar" data-id="${o.id}">Terminar despacho y liquidar</button><p class="muted small">Cuando la mercadería ya tiene levante y se retiró: se cierra la operación y pasás a armar la liquidación de gastos.</p>`
+        : `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3>Liquidación de gastos</h3>${o.lq ? (o.lq.emitida ? pill('Emitida · N° ' + o.lq.nro, 'ok') : pill('Borrador · N° ' + o.lq.nro, 'warn')) : pill('Pendiente', 'bad')}</div>
+          <button class="btn ${o.lq && o.lq.emitida ? 'alt' : 'acc'}" type="button" data-a="seg" data-v="lqc" style="width:100%;margin-top:12px">${o.lq ? (o.lq.emitida ? 'Ver liquidación' : 'Seguir completando') : 'Armar liquidación'}</button></div>`}
       <details class="card"><summary>Editar operación</summary>
       <form class="form" id="opEdit" data-op="${o.id}">
         <label>Cliente<select id="e-cl">${S.clientes.map(x => `<option value="${x.id}"${x.id === o.cl ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></label>
@@ -494,7 +501,7 @@ function vOp(id) {
       <label>Monto (Gs.)<input id="mv-m" inputmode="numeric" required placeholder="1.500.000"></label>
       <button class="btn acc" type="submit">Agregar</button></form></details>`;
   } else if (ui.seg === 'lqc') {
-    body = vLiq(o);
+    body = o.estado === 'Cerrada' || o.lq ? vLiq(o) : '<div class="card empty">La liquidación se arma cuando termina el despacho. Usá "Terminar despacho y liquidar" en Resumen.</div>';
   } else {
     const N = { factura:'Factura comercial', crt:'CRT / conocimiento de embarque', packing:'Packing list', mandato:'Mandato del cliente', hoja:'Hoja de despacho' };
     body = `<div class="list">${Object.keys(N).map(d => `<button class="doc" type="button" data-a="doc" data-id="${o.id}" data-v="${d}"><span class="box ${o.docs[d] ? 'on' : ''}">${o.docs[d] ? I.check : ''}</span><span style="flex:1">${N[d]}</span>${pill(o.docs[d] ? 'Recibido' : 'Falta', o.docs[d] ? 'ok' : 'bad')}</button>`).join('')}</div>
@@ -503,7 +510,7 @@ function vOp(id) {
   return `<a class="back" href="#operaciones">← Operaciones</a>
   <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div style="min-width:0"><h1>${esc(o.desc)}</h1><p class="muted small mono" style="margin-top:4px">${esc(o.ref)}</p></div>${pill(o.estado, o.estado === 'Abierta' ? '' : 'ok')}</div>
   <p class="small" style="margin:8px 0 14px"><a href="#cliente-${c.id}" style="color:var(--accent)">${esc(c.nombre)}</a> · ${esc(o.reg)} · ${esc(o.aduana)} · ${fd(o.fecha)}</p>
-  <div class="segs">${sg('resumen', 'Resumen')}${sg('liq', 'Hoja de despacho')}${sg('movs', 'Gastos y cobros')}${sg('lqc', 'Liquidación')}${sg('docs', 'Documentos')}</div>
+  <div class="segs">${sg('resumen', 'Resumen')}${sg('liq', 'Hoja de despacho')}${sg('movs', 'Gastos y cobros')}${o.estado === 'Cerrada' || o.lq ? sg('lqc', 'Liquidación') : ''}${sg('docs', 'Documentos')}</div>
   <div class="sec${ui.seg === 'lqc' && o.lq && (ui.lqView || (o.lq.emitida ? 'doc' : 'edit')) === 'doc' ? ' sec-edoc' : ''}" style="margin-top:14px">${body}</div>`;
 }
 function vClientes() {
@@ -642,6 +649,51 @@ function lqTxt(o) {
     `\n\nTotal: ${gs(L.total)}` + (L.ant ? `\nAnticipo recibido: ${gs(L.ant)}\n${L.saldo >= 0 ? 'Saldo a cobrar' : 'Saldo a su favor'}: ${gs(Math.abs(L.saldo))}` : '') + '\n\nGracias.';
 }
 
+/* ---------- Provisión de fondos (anticipo que se pide al cliente antes de pagar los tributos) ----------
+   o.prov = [{f, m}] pedidos hechos. S.cfg.banco = datos para transferencia (texto libre). */
+function provCalc(o) {
+  const k = calc(o), gastos = Math.max(o.estG || 0, o.trib || 0), hon = Math.round((o.hon || 0) * 1.1);
+  return { gastos, hon, rec:k.c, sug:Math.max(0, gastos + hon - k.c), pedido:sum(o.prov || [], p => p.m) };
+}
+function provTxt(o, monto) {
+  const P = provCalc(o);
+  return `Hola, le solicitamos la provisión de fondos para el despacho ${o.ref} (${o.desc}).\n\n• Tributos y gastos estimados: ${gs(P.gastos)}\n• Honorario + IVA: ${gs(P.hon)}` +
+    (P.rec ? `\n• Ya recibido: −${gs(P.rec)}` : '') + `\n\nMonto a transferir: ${gs(monto)}` + (S.cfg.banco ? `\n\n${S.cfg.banco}` : '') + `\n\nGracias.${S.cfg.agencia ? '\n' + S.cfg.agencia : ''}`;
+}
+function provCard(o) {
+  if (o.estado !== 'Abierta') return '';
+  const P = provCalc(o), ps = o.prov || [], falta = Math.max(0, P.gastos + P.hon - P.rec);
+  return `<details class="card prov"${ps.length ? '' : ' open'}><summary>Provisión de fondos ${falta ? pill('Faltan ' + abbr(falta), 'warn') : pill('Cubierta', 'ok')}</summary>
+    <dl class="kv"><dt>Tributos y gastos estimados</dt><dd class="mono">${gs(P.gastos)}</dd><dt>Honorario + IVA</dt><dd class="mono">${gs(P.hon)}</dd><dt>Ya recibido del cliente</dt><dd class="mono">${P.rec ? '−' + dots(P.rec) : '0'}</dd><dt><b>Falta recibir</b></dt><dd class="mono"><b>${gs(falta)}</b></dd></dl>
+    ${ps.length ? `<p class="small muted" style="margin-top:10px">Pedidos: ${ps.map(p => `${fd(p.f)} por <b class="mono">${gs(p.m)}</b>`).join(' · ')}</p>` : '<p class="small muted" style="margin-top:10px">Pedila antes de oficializar, así la agencia no pone plata propia para los tributos.</p>'}
+    <div class="form" style="margin-top:12px">
+      <label>Monto a solicitar (Gs.)<input id="pv-m" inputmode="numeric" value="${dots(P.sug)}"></label>
+      <label>Datos para la transferencia (se guardan para todos los pedidos)<textarea id="pv-banco" rows="3" style="min-height:84px" placeholder="Banco …, cuenta N° …, a nombre de …, RUC …">${esc(S.cfg.banco || '')}</textarea></label>
+      <a class="btn acc" data-a="pvWa" data-id="${o.id}" target="_blank" rel="noopener" href="#">Pedir por WhatsApp</a>
+    </div></details>`;
+}
+
+/* ---------- Respaldo y exportación ---------- */
+function descargar(nombre, contenido, tipo) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([contenido], { type:tipo })); a.download = nombre;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+}
+function csvOps() {
+  const q = v => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const head = ['Despacho', 'Cliente', 'RUC', 'Descripción', 'Régimen', 'Aduana', 'Estado', 'Fecha', 'Cierre', 'Valor imponible', 'Gastos por cuenta del cliente', 'Honorario', 'Total a cobrar', 'Cobrado', 'Saldo', 'Costos propios', 'Margen', 'Días desde cierre', 'Liquidación N°'];
+  const rows = S.ops.map(o => { const k = calc(o), c = cliente(o.cl) || {};
+    return [o.ref, c.nombre, c.ruc, o.desc, o.reg, o.aduana, o.estado, o.fecha, o.cierre || '', o.imponible || '', k.g, o.hon, k.total, k.c, k.saldo, k.p, k.margen, o.cierre ? k.dias : '', o.lq ? o.lq.nro : '']; });
+  return '﻿' + [head, ...rows].map(r => r.map(q).join(';')).join('\r\n'); // BOM y ";" para que Excel en español lo abra bien
+}
+function datosCard() {
+  const b = S.cfg.backup, d = b ? days(b) : null;
+  return `<div class="card" id="datos"><h3>Tus datos</h3>
+    <p class="small muted" style="margin:4px 0 12px">Por ahora todo se guarda solo en este dispositivo. Descargá un respaldo cada semana y guardalo en Drive o mandatelo por correo.</p>
+    <p class="small" style="margin-bottom:12px">Último respaldo: ${b ? `<b>${fd(b)}</b>${d > 7 ? ' ' + pill('hace ' + d + ' días', 'warn') : ''}` : pill('nunca', 'warn')}</p>
+    <div class="btns"><button class="btn acc" type="button" data-a="backup">Descargar respaldo</button><label class="btn alt filebtn">Restaurar respaldo<input id="restoreFile" type="file" accept="application/json,.json" hidden></label></div>
+    <button class="btn alt" type="button" data-a="csv" style="width:100%;margin-top:10px">Exportar operaciones a Excel</button></div>`;
+}
+
 /* Estado de cuenta con formato de documento (también es lo que se imprime) */
 function estadoDoc(c, k) {
   const rows = saldoRows(c.id), tot = sum(rows, r => r.k.saldo);
@@ -675,9 +727,10 @@ function render() {
   else if (h === 'clientes') { html = vClientes(); tab = h; }
   else if (h === 'cobros') { html = vCobros(); tab = h; }
   else { html = vInicio(); tab = 'inicio'; }
-  $('#app').innerHTML = html; $('#app').dataset.v = m ? m[1] : h;
+  $('#app').innerHTML = html; $('#app').dataset.v = m ? m[1] : h === 'datos' ? 'inicio' : h;
   document.querySelectorAll('#tabs a').forEach(a => { if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
-  if (lastHash !== h) { window.scrollTo(0, 0); if (m && m[1] === 'op') ui.seg = ui.seg || 'resumen'; }
+  if (h === 'datos' && lastHash !== h) { const d = $('#datos'); if (d) setTimeout(() => d.scrollIntoView({ block:'center' }), 0); }
+  else if (lastHash !== h) { window.scrollTo(0, 0); if (m && m[1] === 'op') ui.seg = ui.seg || 'resumen'; }
   lastHash = h;
 }
 let tt;
@@ -692,7 +745,10 @@ function leerLq(f) {
   const ag = f.querySelector('#lq-agencia'); if (ag) S.cfg.agencia = ag.value;
   save(); $('#lq-tot').innerHTML = lqTotHtml(o);
 }
-document.addEventListener('input', e => { const f = e.target.closest('#lqForm'); if (f) leerLq(f); });
+document.addEventListener('input', e => {
+  const f = e.target.closest('#lqForm'); if (f) leerLq(f);
+  if (e.target.id === 'pv-banco') { S.cfg.banco = e.target.value; save(); }
+});
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-a]'); if (!a) return;
   const v = a.dataset.v, id = +a.dataset.id;
@@ -731,10 +787,27 @@ document.addEventListener('click', e => {
     else if (act === 'lqPrint') window.print();
     // lqWa: el enlace de WhatsApp se abre solo
   }
+  else if (a.dataset.a === 'pvWa') { // arma el enlace con el monto escrito justo antes de abrir WhatsApp
+    const o = S.ops.find(x => x.id === id), m = money($('#pv-m').value);
+    if (!m) { e.preventDefault(); return toast('Ingresá el monto a solicitar'); }
+    a.href = `https://wa.me/${waNum(cliente(o.cl).tel)}?text=${encodeURIComponent(provTxt(o, m))}`;
+    o.prov = (o.prov || []).concat([{ f:iso(new Date()), m }]); save(); setTimeout(() => { render(); toast('Pedido de provisión registrado'); }, 400);
+  }
+  else if (a.dataset.a === 'backup') {
+    const f = iso(new Date()); S.cfg.backup = f; save();
+    descargar(`pecomex-respaldo-${f}.json`, JSON.stringify({ app:'pecomex', version:1, fecha:new Date().toISOString(), datos:S }, null, 1), 'application/json');
+    render(); toast('Respaldo descargado');
+  }
+  else if (a.dataset.a === 'csv') { descargar(`pecomex-operaciones-${iso(new Date())}.csv`, csvOps(), 'text/csv;charset=utf-8'); toast('Archivo para Excel descargado'); }
   else if (a.dataset.a === 'wa') { registrar(cliente(id), 'Enviado por WhatsApp'); setTimeout(render, 400); } // el enlace se abre solo
   else if (a.dataset.a === 'print') { registrar(cliente(id), 'Impreso o guardado en PDF'); render(); setTimeout(() => window.print(), 50); }
   else if (a.dataset.a === 'doc') { const o = S.ops.find(x => x.id === id); o.docs[v] = !o.docs[v]; save(); render(); }
-  else if (a.dataset.a === 'cerrar') { const o = S.ops.find(x => x.id === id); o.estado = 'Cerrada'; o.cierre = iso(new Date()); save(); render(); toast('Operación cerrada y facturada'); }
+  else if (a.dataset.a === 'cerrar') {
+    const o = S.ops.find(x => x.id === id);
+    if (!confirm('¿Terminar el despacho? La operación pasa a cerrada y se arma la liquidación de gastos para el cliente.')) return;
+    o.estado = 'Cerrada'; o.cierre = iso(new Date()); if (!o.lq) armarLiq(o);
+    ui.seg = 'lqc'; ui.lqView = 'edit'; save(); render(); window.scrollTo(0, 0); toast(`Despacho terminado · liquidación N° ${o.lq.nro} lista para completar`);
+  }
   else if (a.dataset.a === 'impCancel') { ui.imp = null; render(); }
   else if (a.dataset.a === 'reset') { S = seed(); S.cfg = cfg0(); save(); render(); toast('Datos de ejemplo restablecidos'); }
   else if (a.dataset.a === 'copiar') {
@@ -745,6 +818,16 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'impFile' && e.target.files[0]) onFile(e.target.files[0]);
+  if (e.target.id === 'restoreFile' && e.target.files[0]) {
+    e.target.files[0].text().then(t => {
+      const r = JSON.parse(t), d = r && r.datos;
+      if (!d || !Array.isArray(d.clientes) || !Array.isArray(d.ops)) throw new Error('formato');
+      if (!confirm(`¿Reemplazar todos los datos de este dispositivo por el respaldo del ${fdt(r.fecha)}?\n(${d.clientes.length} clientes, ${d.ops.length} operaciones). Lo que no esté en el respaldo se pierde.`)) return;
+      S = d; S.cfg = S.cfg || cfg0(); save(); location.hash = '#inicio'; render(); toast('Respaldo restaurado');
+    }).catch(() => toast('Ese archivo no es un respaldo de Pecomex'));
+    e.target.value = '';
+  }
+  if (e.target.id === 'pv-m') { const m = money(e.target.value); e.target.value = m ? dots(m) : ''; }
   if (e.target.classList.contains('lq-m')) { const m = money(e.target.value); e.target.value = m ? dots(m) : ''; } // formato 1.234.567 al salir del campo
 });
 document.addEventListener('submit', e => {

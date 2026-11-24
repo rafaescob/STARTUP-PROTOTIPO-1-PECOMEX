@@ -14,6 +14,14 @@ Prototipo en HTML/CSS/JS puro (sin framework), datos de ejemplo ficticios, guard
 - Cliente: `{id, nombre, ruc, tel?, envios?}`. `tel` se usa para abrir WhatsApp directo (0981… → 595981…). `envios` = `[{f (ISO), via, saldo}]`, máximo 20. Un cliente con operaciones no se puede borrar. Borrar pide confirmación.
 - Las fechas de "hoy" se calculan en hora local (`iso()`), no UTC.
 
+## Flujo de una operación
+1. **Abierta:** en Resumen, "Provisión de fondos": tributos y gastos estimados (máx. entre `estG` y `trib`) + honorario con IVA − cobros = falta recibir. Se pide por WhatsApp con monto editable y datos bancarios (`S.cfg.banco`); cada pedido queda en `o.prov = [{f, m}]`. Inicio alerta cuando la agencia está financiando (gastos > cobros).
+2. **"Terminar despacho y liquidar":** cierra la operación (fecha de cierre = hoy), arma la liquidación y abre la pestaña.
+3. **Cerrada:** recién ahí aparece la pestaña "Liquidación" (o si ya existe `o.lq`). Inicio alerta si una operación cerrada hace ≤ 30 días no tiene la liquidación emitida.
+
+## Respaldo (tarjeta "Tus datos" en Inicio, ancla `#datos`)
+Descargar respaldo JSON `{app, version, fecha, datos:S}` (guarda `S.cfg.backup`), restaurar (valida `clientes` y `ops`, pide confirmación) y exportar operaciones a CSV con `;` y BOM para Excel en español. Inicio alerta si no hay respaldo hace más de 7 días. Inicio muestra máximo 6 alertas, primero las urgentes.
+
 ## Liquidación de gastos al cliente (pestaña "Liquidación" de la operación)
 Copia el formato de la planilla Excel de la agencia. `o.lq = {nro, fecha, consignado, mercaderia, procedencia, origen, emitida, t, g, s}`; líneas `{c, m}` (la del honorario lleva `h:true`).
 - `t` tributos: de la hoja importada (columna tributado, sin código); si no hay hoja, del movimiento "Tributos pagados".
