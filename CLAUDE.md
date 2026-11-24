@@ -24,7 +24,11 @@ Prototipo en HTML/CSS/JS puro (sin framework), datos de ejemplo ficticios, guard
 - Sin librerías: `unzip()` lee el ZIP con `DecompressionStream('deflate-raw')` y `DOMParser` lee los XML (primera hoja, textos compartidos, valores calculados de las fórmulas; celdas `#REF!` se ignoran).
 - `parseLiqXlsx()` busca etiquetas del encabezado (PARA, LIQ. N°, CONSIGNADO, FECHA, DESPACHO N°, VALOR IMP., CAMBIO, PROCEDENCIA, PAÍS DE ORIGEN, ADUANA) y toma el valor a su derecha. El detalle va desde "Detalle de gastos" hasta "TOTAL"; la columna de montos es la del TOTAL. Primera fila sin monto = mercadería. Clasifica por palabras: tributos (`RE_TRIB`), servicios con IVA (`RE_SERV`), resto gastos de terceros. El I.V.A. que viene después de los servicios se ignora (se recalcula). Lee el "ANTICIPO" de debajo del total.
 - Vista previa con controles (total recalculado vs. planilla) → carga en la operación con el mismo despacho o crea una operación cerrada (cliente por nombre; si es nuevo queda sin RUC). Opción de registrar el anticipo como cobro.
-- Probado con la planilla real 284/26: total 22.895.565 igual al de la planilla, saldo a favor 1.222.033.
+- **Se ignoran filas y columnas ocultas**: la planilla real tenía una fila oculta "ANTICIPO DE DESPACHO 24.117.598" (resto de otra liquidación) que la agencia no ve ni imprime.
+- Probado con la planilla real 284/26: total 22.895.565 igual al de la planilla.
+- "Para la factura" (servicios × 1,1, total a facturar, IVA) es **uso interno**: es lo que la agencia pone en la factura física. No va en el documento, el PDF ni el WhatsApp del cliente.
+- **La liquidación no lleva anticipo ni saldo** (decisión del usuario): el documento y el WhatsApp terminan en TOTAL + "Son guaraníes". Los cobros y saldos se ven en el estado de cuenta del cliente, no en la liquidación. El importador tampoco lee anticipos.
+- Todo es variable según cliente y mercadería: el despachante agrega, cambia o quita líneas libremente. Los conceptos tienen sugerencias (`SUG` + plantilla + conceptos usados en otras liquidaciones, vía `<datalist>`), pero se puede escribir cualquiera.
 
 ## Flujo de una operación
 1. **Abierta:** en Resumen, "Provisión de fondos": tributos y gastos estimados (máx. entre `estG` y `trib`) + honorario con IVA − cobros = falta recibir. Se pide por WhatsApp con monto editable y datos bancarios (`S.cfg.banco`); cada pedido queda en `o.prov = [{f, m}]`. Inicio alerta cuando la agencia está financiando (gastos > cobros).
@@ -38,7 +42,7 @@ Descargar respaldo JSON `{app, version, fecha, datos:S}` (guarda `S.cfg.backup`)
 Copia el formato de la planilla Excel de la agencia. `o.lq = {nro, fecha, consignado, mercaderia, procedencia, origen, emitida, t, g, s}`; líneas `{c, m}` (la del honorario lleva `h:true`).
 - `t` tributos: de la hoja importada (columna tributado, sin código); si no hay hoja, del movimiento "Tributos pagados".
 - `g` gastos de terceros (sin IVA): plantilla de la agencia + movimientos `g` registrados. `s` servicios de la agencia (gastos de despacho, verificación, honorario) llevan IVA 10 %.
-- Total = t + g + s + IVA(s). Anticipo = suma de cobros `c`. Saldo a cobrar o a favor del cliente. "Son guaraníes" con `letras()`. Cuadro "A facturar": cada servicio × 1,1; IVA = total a facturar / 11.
+- Total = t + g + s + IVA(s). "Son guaraníes" con `letras()`. Cuadro interno "Para la factura": cada servicio × 1,1; IVA = total a facturar / 11.
 - Verificado con la planilla real (liq. 284/26): total 22.895.565, a facturar 1.283.865, IVA 116.715. La planilla original tenía el texto en letras desactualizado y celdas `#REF!`.
 - `S.cfg = {agencia, liqN:{aa:n}, plantilla:{gastos:[...], servicios:[{c,m}]}}`. Numeración correlativa N/AA. "Guardar como plantilla" guarda conceptos y montos de servicios.
 - Con la liquidación **emitida**, `calc()` usa su total para el saldo y el margen = servicios − costos propios.

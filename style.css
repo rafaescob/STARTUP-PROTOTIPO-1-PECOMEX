@@ -211,8 +211,8 @@ details.card[open]>summary{margin-bottom:14px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .lqkv{grid-template-columns:auto 1fr;font-size:13.5px}
 .lqkv dd{text-align:left}
-.lqfac{border:1px solid var(--line);background:var(--paper);border-radius:12px;padding:14px}
-.lqfac .edoc-kicker{font-size:18px;margin-bottom:6px}
+.lqfac{border-style:dashed;background:var(--paper)}
+.lqfac h3{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .lqdoc .tbl td:first-child{white-space:normal}
 .logopick{display:grid;gap:10px;padding:12px;border:1px dashed var(--line);border-radius:12px}
 .logopick img{height:44px;width:auto;max-width:100%;object-fit:contain;object-position:left}

@@ -449,10 +449,13 @@ async function leerXlsx(file) {
   } catch (err) {}
   const sh = await get(path); if (!sh) throw new Error('No encontré la hoja de cálculo dentro del archivo.');
   const colN = ref => [...ref.replace(/\d+/g, '')].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
-  const rows = [];
-  [...X(sh).getElementsByTagName('row')].forEach(r => {
+  const rows = [], doc = X(sh), ocultas = new Set(); // columnas ocultas: no se ven en Excel ni al imprimir, se ignoran
+  [...doc.getElementsByTagName('col')].forEach(c => { if (c.getAttribute('hidden') === '1' || c.getAttribute('hidden') === 'true') for (let i = +c.getAttribute('min'); i <= +c.getAttribute('max'); i++) ocultas.add(i - 1); });
+  [...doc.getElementsByTagName('row')].forEach(r => {
+    if (r.getAttribute('hidden') === '1' || r.getAttribute('hidden') === 'true') return; // fila oculta (restos de otras liquidaciones)
     const cells = [];
     [...r.getElementsByTagName('c')].forEach(c => {
+      if (ocultas.has(colN(c.getAttribute('r')))) return;
       const t = c.getAttribute('t'), v = c.getElementsByTagName('v')[0];
       let val = t === 'inlineStr' ? tx(c) : v ? v.textContent : '';
       if (t === 's') val = strs[+val] || '';
@@ -503,8 +506,6 @@ function parseLiqXlsx(rows) {
     if (RE_SERV.test(n)) { if (/HONORARIO/.test(n)) l.h = true; d.s.push(l); } else if (RE_TRIB.test(n) && !d.g.some(x => x.m)) d.t.push(l); else d.g.push(l);
   });
   d.totalPlanilla = ti > 0 ? Math.round((rows[ti].cells.find(c => c.c === col) || { v:0 }).v || 0) : null;
-  const an = rows.slice(end).flatMap(r => r.cells).find(c => txt(c) && /ANTICIPO/.test(nrm(c.v)));
-  if (an) { const row = rows.find(r => r.cells.includes(an)), nm = row.cells.find(c => typeof c.v === 'number'); d.anticipo = nm ? Math.round(nm.v) : money((String(an.v).match(/\d{1,3}(\.\d{3})+|\d{4,}/) || [''])[0]); }
   if (!d.t.length && !d.g.length && !d.s.length) throw new Error('La planilla no tiene líneas de gastos con montos.');
   ['para', 'consignado', 'procedencia', 'origen', 'aduana', 'despacho', 'nro'].forEach(k => { if (d[k] != null) d[k] = String(d[k]).trim(); });
   return d;
@@ -523,8 +524,8 @@ function lxCard(opId) { // botón + vista previa; opId = null desde Operaciones
 }
 function lxPreview(lx) {
   const d = lx.d, o = lxOp(lx), q = { t:d.t, g:d.g, s:d.s }, s = a => sum(a, l => l.m);
-  const sv = s(d.s), iva = Math.round(sv * 0.1), tot = s(d.t) + s(d.g) + sv + iva, cobr = o ? sum(o.movs.filter(m => m.t === 'c'), m => m.m) : 0;
-  const okTot = d.totalPlanilla == null || Math.abs(d.totalPlanilla - tot) <= 2, dif = (d.anticipo || 0) - cobr;
+  const sv = s(d.s), iva = Math.round(sv * 0.1), tot = s(d.t) + s(d.g) + sv + iva;
+  const okTot = d.totalPlanilla == null || Math.abs(d.totalPlanilla - tot) <= 2;
   const cl = !o && S.clientes.find(c => nrm(c.nombre) === nrm(d.para || ''));
   return `<div class="card imp lxprev"><h3>Liquidación leída de Excel</h3><p class="small muted">${esc(lx.name || '')}</p>
     <dl class="kv" style="margin-top:10px">${[['Liquidación N°', d.nro], ['Fecha', d.fecha && fd(d.fecha)], ['Para', d.para], ['Despacho N°', d.despacho], ['Valor imponible', d.imponible ? gs(d.imponible) : ''], ['Tipo de cambio', d.cambio ? dec(d.cambio) : ''], ['Aduana', d.aduana], ['Mercadería', d.mercaderia]].filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join('')}</dl>
@@ -532,7 +533,7 @@ function lxPreview(lx) {
       <li class="${okTot ? 'ok' : 'bad'}"><span>${okTot ? '✓' : '✗'}</span><span>Total recalculado <b class="mono">${gs(tot)}</b>${d.totalPlanilla != null ? (okTot ? ' (igual al de la planilla)' : ` · la planilla dice <b class="mono">${gs(d.totalPlanilla)}</b>: revisá las fórmulas`) : ''}</span></li></ul>
     <div class="note ${o ? 'good' : 'warn'}" style="margin-top:12px">${o ? `Se carga en la operación <b>${esc(o.desc)}</b>${o.ref !== d.despacho && d.despacho ? ` (despacho ${esc(o.ref)}; la planilla dice ${esc(d.despacho)})` : ''}.${o.lq ? ` Reemplaza la liquidación N° ${esc(o.lq.nro)}.` : ''}${o.estado === 'Abierta' ? ' La operación pasa a terminada.' : ''}`
       : `No hay una operación con el despacho ${esc(d.despacho || '(sin número)')}: se crea una nueva, ya terminada, para ${cl ? `<b>${esc(cl.nombre)}</b>` : `el cliente nuevo <b>${esc(tcase(d.para || 'Sin nombre'))}</b> (cargale el RUC después)`}.`}</div>
-    ${d.anticipo ? `<label class="chk"><input type="checkbox" id="lx-ant" ${dif > 0 ? 'checked' : 'disabled'}> <span>La planilla tiene un anticipo de <b class="mono">${gs(d.anticipo)}</b>. ${dif > 0 ? `Registrar <b class="mono">${gs(dif)}</b> como cobro${cobr ? ` (ya hay ${gs(cobr)} cobrados)` : ''}.` : 'Ya está registrado en los cobros.'}</span></label>` : ''}
+    <p class="small muted" style="margin-top:10px">Después de cargarla podés agregar, cambiar o quitar líneas en "Completar".</p>
     <div class="btns" style="margin-top:14px"><button class="btn acc" type="button" data-a="lxOk">Cargar liquidación</button><button class="btn alt" type="button" data-a="lxCancel">Descartar</button></div></div>`;
 }
 function cargarLx() {
@@ -550,8 +551,6 @@ function cargarLx() {
   if (!o.imponible && d.imponible) o.imponible = d.imponible;
   if (!o.cambio && d.cambio) o.cambio = d.cambio;
   if (o.estado === 'Abierta') { o.estado = 'Cerrada'; o.cierre = d.fecha || iso(new Date()); }
-  const chk = $('#lx-ant');
-  if (d.anticipo && chk && chk.checked) { const dif = d.anticipo - sum(o.movs.filter(m => m.t === 'c'), m => m.m); if (dif > 0) o.movs.push({ id:Date.now(), f:d.fecha || iso(new Date()), t:'c', c:'Anticipo de despacho (según liquidación)', m:dif }); }
   o.lq = { nro:d.nro || '', fecha:d.fecha || iso(new Date()), consignado:d.consignado || 'Al mismo.', mercaderia:d.mercaderia || o.desc, procedencia:etiqueta(d.procedencia || ''), origen:etiqueta(d.origen || ''), emitida:null,
     t:d.t.map(l => ({ ...l })), g:d.g.map(l => ({ ...l })), s:d.s.map(l => ({ ...l })), excel:true };
   ui.lx = null; save(); return o;
@@ -702,9 +701,8 @@ function cargarLogo(file) { // achica la imagen (máx. 600×220) para que entre 
 const LQG = { t:'Tributos (hoja de despacho)', g:'Gastos de terceros', s:'Servicios de la agencia (+ IVA 10 %)' };
 function lqTot(o) {
   const q = o.lq, s = a => sum(a, l => +l.m || 0);
-  const t = s(q.t), g = s(q.g), sv = s(q.s), iva = Math.round(sv * 0.1), total = t + g + sv + iva;
-  const ant = sum(o.movs.filter(m => m.t === 'c'), m => m.m);
-  return { t, g, sv, iva, total, ant, saldo:total - ant };
+  const t = s(q.t), g = s(q.g), sv = s(q.s), iva = Math.round(sv * 0.1);
+  return { t, g, sv, iva, total:t + g + sv + iva };
 }
 /* Número en letras (guaraníes, sin decimales) */
 function letras(n) {
@@ -735,11 +733,22 @@ function armarLiq(o) {
   const s = cf.plantilla.servicios.map(x => ({ c:x.c, m:x.m })).concat([{ c:'Honorarios profesionales', m:o.hon, h:true }]);
   o.lq = { nro:`${n}/${yy}`, fecha:iso(new Date()), consignado:'Al mismo.', mercaderia:o.desc, procedencia:(o.meta && o.meta.procedencia) || '', origen:(o.meta && o.meta.origen) || '', emitida:null, t, g, s };
 }
+/* Sugerencias al escribir un concepto: lista base + lo que la agencia ya usó en otras liquidaciones (se puede escribir cualquier otro) */
+const SUG = {
+  t:['Derecho aduanero', 'INDI', 'Servicio de valoración', 'IRE general', 'I.V.A.', 'Canon despachante', 'Tasa de intervención', 'Impuesto selectivo al consumo', 'Interés por admisión temporal', 'Servicio red bancaria DINAN'],
+  g:['Tasa portuaria', 'Marina Mercante', 'Almacenaje', 'Flete interno', 'Estiba', 'Gastos de origen', 'Consularización de documentos', 'Centro de Despachantes', 'Retiro de guía', 'Ministerio de Relaciones Exteriores', 'Fotocopias', 'Diferencia de peso', 'Escaneo de contenedor', 'Precintos'],
+  s:['Gastos de despacho', 'Gastos de verificación', 'Honorarios profesionales', 'Gestión de licencias previas', 'Gestión de certificado de origen']
+};
+function sugerencias(k) {
+  const set = new Map(); const add = c => { c = String(c || '').trim(); if (c && !set.has(c.toLowerCase())) set.set(c.toLowerCase(), c); };
+  SUG[k].forEach(add); if (k === 'g') S.cfg.plantilla.gastos.forEach(add); if (k === 's') S.cfg.plantilla.servicios.forEach(x => add(x.c));
+  S.ops.forEach(o => o.lq && (o.lq[k] || []).forEach(l => add(l.c)));
+  return `<datalist id="dl-${k}">${[...set.values()].sort((a, b) => a.localeCompare(b, 'es')).map(c => `<option value="${esc(c)}">`).join('')}</datalist>`;
+}
 function lqTotHtml(o) {
   const L = lqTot(o), reg = sum(o.movs.filter(m => m.t === 'g'), m => m.m), dg = L.t + L.g - reg;
   return `<dl class="kv"><dt>Tributos</dt><dd class="mono">${gs(L.t)}</dd><dt>Gastos de terceros</dt><dd class="mono">${gs(L.g)}</dd><dt>Servicios de la agencia</dt><dd class="mono">${gs(L.sv)}</dd><dt>IVA 10 % sobre servicios</dt><dd class="mono">${gs(L.iva)}</dd>
-    <dt><b>Total</b></dt><dd class="mono"><b>${gs(L.total)}</b></dd><dt>Anticipo recibido</dt><dd class="mono">−${dots(L.ant)}</dd>
-    <dt><b>${L.saldo >= 0 ? 'Saldo a cobrar' : 'Saldo a favor del cliente'}</b></dt><dd class="mono"><b>${gs(Math.abs(L.saldo))}</b></dd></dl>
+    <dt><b>Total</b></dt><dd class="mono"><b>${gs(L.total)}</b></dd></dl>
     <div class="note ${dg === 0 ? 'good' : 'warn'}" style="margin-top:12px">${dg === 0 ? '✓ Tributos y gastos coinciden con lo registrado en "Gastos y cobros".'
       : `Tributos y gastos de la liquidación: <b class="mono">${gs(L.t + L.g)}</b>. Registrado en "Gastos y cobros": <b class="mono">${gs(reg)}</b>. Diferencia <b class="mono">${gs(dg)}</b>: revisá si falta cargar algo de un lado o del otro.`}</div>`;
 }
@@ -752,13 +761,14 @@ function vLiq(o) {
   const top = `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="chips">${sg('edit', 'Completar')}${sg('doc', 'Ver documento')}</div>${q.emitida ? pill('Emitida el ' + fd(q.emitida), 'ok') : pill('Borrador', 'warn')}</div>`;
   if (view === 'doc') return top + lqDoc(o) + `<div class="btns"><a class="btn acc" data-a="lqWa" target="_blank" rel="noopener" href="https://wa.me/${waNum(cliente(o.cl).tel)}?text=${encodeURIComponent(lqTxt(o))}">Enviar por WhatsApp</a><button class="btn alt" type="button" data-a="lqPrint">Imprimir o guardar PDF</button></div>
     <button class="btn ${q.emitida ? 'alt' : ''}" type="button" data-a="lqEmit" data-id="${o.id}">${q.emitida ? 'Volver a borrador' : 'Marcar como emitida'}</button>
-    <p class="muted small">${q.emitida ? 'Emitida: el saldo del cliente y el estado de cuenta usan el total de esta liquidación.' : 'Al marcarla como emitida, el saldo del cliente pasa a usar el total de esta liquidación.'}</p>`;
-  const line = (k, l, i) => `<div class="lqline" data-g="${k}" data-i="${i}"><input class="lq-c" aria-label="Concepto" placeholder="Concepto" value="${esc(l.c)}"><input class="lq-m mono" aria-label="Monto en Gs." inputmode="numeric" placeholder="0" value="${l.m ? dots(l.m) : ''}"><button class="x" type="button" data-a="lqDel" data-v="${k}:${i}" aria-label="Quitar línea">×</button></div>`;
+    <p class="muted small">${q.emitida ? 'Emitida: el saldo del cliente y el estado de cuenta usan el total de esta liquidación.' : 'Al marcarla como emitida, el saldo del cliente pasa a usar el total de esta liquidación.'}</p>
+    ${lqFacHtml(o)}`;
+  const line = (k, l, i) => `<div class="lqline" data-g="${k}" data-i="${i}"><input class="lq-c" list="dl-${k}" aria-label="Concepto" placeholder="Escribí o elegí un concepto" value="${esc(l.c)}"><input class="lq-m mono" aria-label="Monto en Gs." inputmode="numeric" placeholder="0" value="${l.m ? dots(l.m) : ''}"><button class="x" type="button" data-a="lqDel" data-v="${k}:${i}" aria-label="Quitar línea">×</button></div>`;
   const H = honorario(o.imponible, esExport(o.reg));
   const grp = k => `<div class="card lqgrp"><h3>${LQG[k]}</h3>${q[k].map((l, i) => line(k, l, i)).join('') || '<p class="muted small">Sin líneas.</p>'}
     ${k === 's' && H.tramo ? `<p class="small muted">Honorario según escala sobre el valor imponible: <b class="mono">${gs(H.total)}</b>. Si cobrás extras, sumalos en la línea del honorario o agregá otra línea.</p>` : ''}
     ${k === 't' && !o.liq ? '<p class="small muted">Esta operación no tiene hoja de despacho importada: cargá los tributos a mano.</p>' : ''}
-    <button class="btn alt" type="button" data-a="lqAdd" data-v="${k}">+ Agregar línea</button></div>`;
+    <button class="btn alt" type="button" data-a="lqAdd" data-v="${k}">+ Agregar línea</button>${sugerencias(k)}</div>`;
   return top + `<form class="form" id="lqForm" data-op="${o.id}" autocomplete="off">
     <details class="card"><summary>Datos de la liquidación · N° ${esc(q.nro)}</summary><div class="form">
       <label>Nombre de la agencia (encabezado de todas las liquidaciones)<input id="lq-agencia" value="${esc(S.cfg.agencia)}" placeholder="Ej. Agencia de Despachos …"></label>
@@ -770,7 +780,8 @@ function vLiq(o) {
     </div></details>
     ${grp('t')}${grp('g')}${grp('s')}
     <div class="card" id="lq-tot">${lqTotHtml(o)}</div>
-    <p class="muted small">Se guarda solo mientras escribís. Las líneas en 0 no aparecen en el documento.</p>
+    <div id="lq-fac">${lqFacHtml(o)}</div>
+    <p class="muted small">Agregá las líneas que necesite cada despacho: podés elegir un concepto sugerido o escribir uno nuevo. Se guarda solo mientras escribís, y las líneas en 0 no aparecen en el documento.</p>
     <div class="btns"><button class="btn acc" type="button" data-a="lqView" data-v="doc">Ver documento</button><button class="btn alt" type="button" data-a="lqTpl">Guardar como plantilla</button></div>
     <button class="btn bad" type="button" data-a="lqDelAll" data-id="${o.id}">Borrar y volver a armar</button>
   </form>
@@ -781,7 +792,6 @@ function lqDoc(o) {
   const rows = k => q[k].filter(l => +l.m).map(l => `<tr><td>${esc(l.c || 'Sin concepto')}</td><td>${dots(l.m)}</td></tr>`).join('');
   const sec = k => rows(k) ? `<tr class="grp"><td colspan="2">${LQG[k].replace(' (hoja de despacho)', '').replace(' (+ IVA 10 %)', '')}</td></tr>${rows(k)}` : '';
   const kv = [['Para', c.nombre], ['Consignado', q.consignado], ['Despacho N°', o.ref], ['Aduana', o.aduana], ['Valor imponible', o.imponible ? gs(o.imponible) : ''], ['Tipo de cambio', o.cambio ? dec(o.cambio) : ''], ['Procedencia', q.procedencia], ['País de origen', q.origen]].filter(r => r[1]);
-  const fac = q.s.filter(l => +l.m);
   return `<div class="card edoc print-area lqdoc">
     <div class="lh"><img class="doclogo" src="${logoSrc()}" alt="${esc(S.cfg.agencia || 'Pecomex')}"><p class="small muted">${S.cfg.agencia ? `<b class="ink">${esc(S.cfg.agencia)}</b><br>` : ''}${fd(q.fecha)}<br>Montos en Gs.</p></div>
     <div class="edoc-head"><p class="edoc-kicker">Liquidación de gastos</p><h3>N° ${esc(q.nro)}</h3></div>
@@ -791,20 +801,25 @@ function lqDoc(o) {
       ${sec('t')}${sec('g')}${sec('s')}
       ${L.iva ? `<tr><td>I.V.A. 10 % sobre servicios</td><td>${dots(L.iva)}</td></tr>` : ''}
       <tr class="tot"><td>TOTAL</td><td>${dots(L.total)}</td></tr>
-      ${L.ant ? `<tr><td>Anticipo recibido</td><td>−${dots(L.ant)}</td></tr><tr class="tot"><td>${L.saldo >= 0 ? 'SALDO A COBRAR' : 'SALDO A FAVOR DEL CLIENTE'}</td><td>${dots(Math.abs(L.saldo))}</td></tr>` : ''}
     </tbody></table>
     <p class="small"><span class="muted">Son guaraníes:</span> <b>${letras(L.total)}.-</b></p>
-    ${fac.length ? `<div class="lqfac"><p class="edoc-kicker">A facturar</p><table class="tbl"><tbody>${fac.map(l => `<tr><td>${esc(l.c)}</td><td>${dots(Math.round(l.m * 1.1))}</td></tr>`).join('')}
-      <tr class="tot"><td>Total a facturar</td><td>${dots(L.sv + L.iva)}</td></tr><tr><td>I.V.A. incluido (10 %)</td><td>${dots(L.iva)}</td></tr></tbody></table></div>` : ''}
     <div class="docband" aria-hidden="true"></div>
   </div>`;
+}
+/* Para la factura física: uso interno de la agencia, NO va en el documento ni en el mensaje al cliente */
+function lqFacHtml(o) {
+  const L = lqTot(o), fac = o.lq.s.filter(l => +l.m);
+  if (!fac.length) return '';
+  return `<div class="card lqfac"><h3>Para la factura <span class="pill">Uso interno · no se envía al cliente</span></h3>
+    <table class="tbl" style="margin-top:8px"><tbody>${fac.map(l => `<tr><td>${esc(l.c)}</td><td>${dots(Math.round(l.m * 1.1))}</td></tr>`).join('')}
+    <tr class="tot"><td>Total a facturar</td><td>${dots(L.sv + L.iva)}</td></tr><tr><td>I.V.A. incluido (10 %)</td><td>${dots(L.iva)}</td></tr></tbody></table></div>`;
 }
 function lqTxt(o) {
   const q = o.lq, L = lqTot(o), c = cliente(o.cl);
   const ls = k => q[k].filter(l => +l.m).map(l => `• ${l.c}: ${gs(l.m)}`).join('\n');
   return `Liquidación de gastos N° ${q.nro}${S.cfg.agencia ? ' · ' + S.cfg.agencia : ''}\n${c.nombre}\nDespacho ${o.ref} · ${fd(q.fecha)}\n\n` +
     ['t', 'g', 's'].filter(k => ls(k)).map(k => ls(k)).join('\n') + (L.iva ? `\n• IVA 10 % sobre servicios: ${gs(L.iva)}` : '') +
-    `\n\nTotal: ${gs(L.total)}` + (L.ant ? `\nAnticipo recibido: ${gs(L.ant)}\n${L.saldo >= 0 ? 'Saldo a cobrar' : 'Saldo a su favor'}: ${gs(Math.abs(L.saldo))}` : '') + '\n\nGracias.';
+    `\n\nTotal: ${gs(L.total)}\n(${letras(L.total).toLowerCase()} guaraníes)\n\nGracias.`;
 }
 
 /* ---------- Provisión de fondos (anticipo que se pide al cliente antes de pagar los tributos) ----------
@@ -906,7 +921,7 @@ function leerLq(f) {
   f.querySelectorAll('.lqline').forEach(r => { const l = q[r.dataset.g][+r.dataset.i]; l.c = r.querySelector('.lq-c').value; l.m = money(r.querySelector('.lq-m').value); });
   ['nro', 'fecha', 'consignado', 'mercaderia', 'procedencia', 'origen'].forEach(k => { const i = f.querySelector('#lq-' + k); if (i) q[k] = i.value; });
   const ag = f.querySelector('#lq-agencia'); if (ag) S.cfg.agencia = ag.value;
-  save(); $('#lq-tot').innerHTML = lqTotHtml(o);
+  save(); $('#lq-tot').innerHTML = lqTotHtml(o); $('#lq-fac').innerHTML = lqFacHtml(o);
 }
 document.addEventListener('input', e => {
   const f = e.target.closest('#lqForm'); if (f) leerLq(f);
