@@ -10,7 +10,9 @@ Prototipo en HTML/CSS/JS puro (sin framework), datos de ejemplo ficticios, guard
 - Repo: `rafaescob/STARTUP-PROTOTIPO-1-PECOMEX`, rama `main`. Se publica con GitHub Pages (hay que activarlo en Settings > Pages).
 - Archivos: `index.html`, `style.css`, `app.js` (incluye el lector de PDF al inicio), `manifest.webmanifest`, `sw.js` (red primero, caché `pecomex-vN`), `icons/`, `vendor/` (pdf.js, Apache 2.0).
 - Al cambiar `style.css` o `app.js`, subir el número `?v=` en `index.html` y la versión de caché en `sw.js`.
-- Pantallas: Inicio, Operaciones (lista, importar PDF, nueva operación), Operación (Resumen, Hoja de despacho, Gastos y cobros, Documentos), Clientes, Cliente (estado de cuenta), Cobros.
+- Pantallas: Inicio (con gráfico de cobros de los últimos 6 meses), Operaciones (lista, importar PDF, nueva operación), Operación (Resumen con "Editar operación", Hoja de despacho, Gastos y cobros —tocar un movimiento para editarlo o borrarlo—, Documentos), Clientes, Cliente (estado de cuenta tipo documento, imprimir/PDF, registro de envíos, "Editar cliente"), Cobros.
+- Cliente: `{id, nombre, ruc, tel?, envios?}`. `tel` se usa para abrir WhatsApp directo (0981… → 595981…). `envios` = `[{f (ISO), via, saldo}]`, máximo 20. Un cliente con operaciones no se puede borrar. Borrar pide confirmación.
+- Las fechas de "hoy" se calculan en hora local (`iso()`), no UTC.
 - Modelo de operación: `{id, cl, ref, reg, aduana, desc, estado, fecha, cierre, usd, flete, cambio, imponible, trib, gar, estG, hon, liq, items, docs, movs, meta}`. Movimientos: `g` gasto por cuenta del cliente, `p` costo propio, `c` cobro. `liq` = `[concepto, tributado, garantizado]`; `items` = `[posición, descripción, USD, imponible Gs, arancel %]`.
 
 ## Importación de la hoja de despacho (PDF del sistema SOFIA)
@@ -31,7 +33,6 @@ SOFIA/KIT/KITAPP (DNIT) son los sistemas de la aduana. Regímenes: IT04 importac
 
 ## Pendiente / ideas
 - Adjuntar el PDF a la operación y poder abrirlo después.
-- Estado de cuenta más pulido con registro de envíos; gráfico de cobros por mes en Inicio.
 - Probar hojas de exportación y otros regímenes (pedir 3-4 hojas con datos del cliente tachados).
 - Preguntar al despachante si el sistema KIT permite exportar datos (conexión directa).
 - Backend real (cuentas, base de datos compartida) cuando el prototipo se valide; hoy no hay servidor.

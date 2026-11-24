@@ -153,3 +153,47 @@ details.card[open]>summary{margin-bottom:14px}
 .btn[disabled]{opacity:.5;cursor:not-allowed}
 
 :root{padding-top:env(safe-area-inset-top,0px)}
+
+/* Editar y borrar */
+.rowbtn{width:100%;background:none;border-inline:0;border-bottom:0;text-align:left;cursor:pointer}
+.rowbtn:first-child{border-top:0}
+.rowbtn:active{background:var(--accent-tint)}
+.list>form.form{padding:14px;border-top:1px solid var(--line);background:var(--accent-tint)}
+.list>form.form:first-child{border-top:0}
+.btn.bad{background:transparent;color:var(--bad);border-color:var(--bad)}
+
+/* Gráfico de cobros por mes */
+.cm{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:16px}
+.cm-col{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.cm-track{position:relative;width:100%;height:120px;border-bottom:1px solid var(--line)}
+.cm-bar{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:70%;max-width:40px;border-radius:6px 6px 2px 2px;background:var(--accent);opacity:.35}
+.cm-bar.now{opacity:1}
+.cm-v{position:absolute;left:0;right:0;text-align:center;font-size:11px;color:var(--muted);white-space:nowrap}
+.cm-l{font-size:12px;color:var(--muted)}
+.up{color:var(--good)}.down{color:var(--bad)}
+
+/* Estado de cuenta tipo documento */
+.edoc{display:flex;flex-direction:column;gap:12px}
+.edoc-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding-bottom:12px;border-bottom:2px solid var(--ink)}
+.edoc-kicker{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:2px}
+.edoc .tbl .sub{display:block;font-size:12px;color:var(--muted);white-space:normal}
+.edoc-foot{border-top:1px solid var(--line);padding-top:10px}
+.edoc .om{display:none}
+@media (max-width:599px){.edoc .hm{display:none}.edoc .om{display:block}}
+.cm{margin-top:28px}
+
+/* Impresión: solo el estado de cuenta, en blanco y negro */
+@media print{
+  html:root:not(#_){--paper:#fff;--card:#fff;--ink:#000;--muted:#444;--line:#bbb;--accent:#000;color-scheme:light;padding:0}
+  body{padding:0!important;background:#fff;font-size:12pt}
+  .tabs,.toast{display:none!important}
+  .wrap{max-width:none;padding:0}
+  #app{display:block!important}
+  #app>*:not(.sec-edoc){display:none!important}
+  .sec-edoc{margin:0}
+  .sec-edoc>*:not(.print-area){display:none!important}
+  .print-area{border:0;padding:0}
+  .scroll{overflow:visible}
+  .tbl td{white-space:normal}
+  .edoc .hm{display:table-cell!important}.edoc .om{display:none!important}
+}

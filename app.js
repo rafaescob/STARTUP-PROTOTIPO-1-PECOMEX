@@ -137,7 +137,12 @@ const dots = n => Math.abs(Math.round(n)).toString().replace(/\B(?=(\d{3})+(?!\d
 const gs = n => (n < 0 ? '−' : '') + 'Gs.\u00a0' + dots(n);
 const bigN = n => `<small class="u">Gs.</small>${n < 0 ? '−' : ''}${dots(n)}`;
 const dec = n => { const [i, d] = n.toFixed(2).split('.'); return i.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d; };
-const iso = d => d.toISOString().slice(0, 10);
+const iso = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); // fecha local, no UTC
+const pad = n => String(n).padStart(2, '0');
+const fdt = s => { const d = new Date(s); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const abbr = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' M' : n >= 1e3 ? Math.round(n / 1e3) + ' mil' : dots(n);
+const waNum = t => { let d = String(t || '').replace(/\D/g, ''); if (d.startsWith('0')) d = '595' + d.slice(1); return d; }; // 0981… → 595981…
 const dago = n => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d); };
 const fd = s => s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);
 const days = s => Math.max(0, Math.floor((Date.now() - new Date(s + 'T12:00:00')) / 864e5));
@@ -214,9 +219,16 @@ function cliCalc(id) {
   return { b, total:b[0] + b[1] + b[2], adel, curso, peor:b[2] > 0 ? 2 : b[1] > 0 ? 1 : b[0] > 0 ? 0 : -1 };
 }
 const cliente = id => S.clientes.find(c => c.id === id);
+const saldoRows = id => S.ops.filter(o => o.cl === id).map(o => ({ o, k:calc(o) })).filter(r => r.k.saldo > 0).sort((a, b) => (a.o.fecha > b.o.fecha ? 1 : -1));
+/* Registro de envíos del estado de cuenta (se guarda en el cliente) */
+function registrar(c, via) {
+  c.envios = c.envios || [];
+  c.envios.unshift({ f:new Date().toISOString(), via, saldo:sum(saldoRows(c.id), r => r.k.saldo) });
+  c.envios = c.envios.slice(0, 20); save();
+}
 function estadoTxt(id) {
   const c = cliente(id);
-  const rows = S.ops.filter(o => o.cl === id).map(o => ({ o, k:calc(o) })).filter(r => r.k.saldo > 0);
+  const rows = saldoRows(id);
   let t = `Estado de cuenta: ${c.nombre}\nRUC ${c.ruc}\nAl ${fd(iso(new Date()))}\n\n`;
   rows.forEach(({ o, k }) => { t += `• ${o.desc} (${o.ref})${o.estado === 'Abierta' ? ' · en trámite' : ''}\n  Total ${gs(k.total)} · Cobrado ${gs(k.c)} · Saldo ${gs(k.saldo)}\n`; });
   t += rows.length ? `\nSaldo total: ${gs(sum(rows, r => r.k.saldo))}\n` : 'No tiene saldo pendiente.\n';
@@ -227,7 +239,8 @@ function estadoTxt(id) {
 const I = {
   chev:'<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>',
   check:'<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7.5l3 3 6-7"/></svg>',
-  mark:'<svg viewBox="0 0 18 18" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h7l3 3v11H4z"/><path d="M7 9h5M7 12h5"/></svg>'
+  mark:'<svg viewBox="0 0 18 18" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2h7l3 3v11H4z"/><path d="M7 9h5M7 12h5"/></svg>',
+  pen:'<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>'
 };
 const pill = (t, k = '') => `<span class="pill ${k}">${esc(t)}</span>`;
 const stClass = n => n === 2 ? 's2' : n === 1 ? 's1' : n === 0 ? 's0' : 'sn';
@@ -250,6 +263,25 @@ function cliRow(c) {
   <div class="r"><span class="amt">${gs(k.total)}</span>${k.peor === 2 ? pill('+60 días', 'bad') : k.peor === 1 ? pill('31 a 60 días', 'warn') : k.total ? pill('al día', 'ok') : pill('sin deuda', 'ok')}</div>${I.chev}</a>`;
 }
 
+/* Cobros recibidos por mes (últimos n meses, el actual a la derecha) */
+function cobrosMes(n = 6) {
+  const now = new Date(), out = [];
+  for (let i = n - 1; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ k:d.getFullYear() + '-' + pad(d.getMonth() + 1), l:MES[d.getMonth()], y:d.getFullYear(), v:0 }); }
+  S.ops.forEach(o => o.movs.forEach(m => { if (m.t === 'c') { const b = out.find(x => x.k === m.f.slice(0, 7)); if (b) b.v += m.m; } }));
+  return out;
+}
+function chartCobros() {
+  const ms = cobrosMes(), max = Math.max(0, ...ms.map(m => m.v)), tot = sum(ms, m => m.v), act = ms[ms.length - 1], prev = ms[ms.length - 2];
+  const cmp = prev.v ? Math.round((act.v - prev.v) / prev.v * 100) : null;
+  return `<div class="card">
+    <div class="fig"><div><p class="lbl">Cobrado en 6 meses</p><p class="val">${bigN(tot)}</p></div><div><p class="lbl">Este mes (${act.l})</p><p class="val">${bigN(act.v)}</p>${cmp === null ? '' : `<p class="small ${cmp >= 0 ? 'up' : 'down'}">${cmp >= 0 ? '▲' : '▼'} ${Math.abs(cmp)} % vs. ${prev.l}</p>`}</div></div>
+    <div class="cm" role="img" aria-label="Cobros por mes: ${ms.map(m => m.l + ' ' + gs(m.v)).join(', ')}">${ms.map((m, i) => `<div class="cm-col">
+      <div class="cm-track"><span class="cm-v mono" style="bottom:calc(${max ? m.v / max * 100 : 0}% + 4px)">${m.v ? abbr(m.v) : ''}</span><span class="cm-bar${i === ms.length - 1 ? ' now' : ''}" style="height:${max && m.v ? Math.max(3, m.v / max * 100) : 0}%"></span></div>
+      <span class="cm-l">${m.l}${m.l === 'ene' ? ' ' + String(m.y).slice(2) : ''}</span></div>`).join('')}</div>
+    ${tot ? '' : '<p class="muted small">Todavía no hay cobros registrados en estos meses.</p>'}
+  </div>`;
+}
+
 /* ---------- Vistas ---------- */
 function vInicio() {
   const ops = S.ops, ks = ops.map(calc);
@@ -267,6 +299,7 @@ function vInicio() {
     <div class="fig"><div><p class="lbl">Adelantado por la agencia</p><p class="val big">${bigN(adel)}</p></div><div><p class="lbl">Por cobrar (cerradas)</p><p class="val">${bigN(xc)}</p></div></div>
     ${agingBar(b)}
   </div></div>
+  <div class="sec"><h2>Cobros por mes</h2>${chartCobros()}</div>
   <div class="sec"><h2>Requieren atención</h2>${alerts.length ? `<div class="list">${alerts.map(a => `<a class="row" href="${a.h}"><div class="main"><span class="t">${esc(a.t)}</span><span class="s">${a.s}</span></div>${pill(a.k === 'bad' ? 'Urgente' : 'Revisar', a.k)}${I.chev}</a>`).join('')}</div>` : '<div class="card empty">Todo en orden por ahora.</div>'}</div>
   <div class="sec"><h2>Operaciones abiertas <a href="#operaciones" class="small" style="text-transform:none;letter-spacing:0;color:var(--accent)">Ver todas</a></h2><div class="list">${abiertas.map(opRow).join('') || '<div class="empty">No hay operaciones abiertas.</div>'}</div></div>
   <div class="foot"><p>Prototipo con datos de ejemplo y nombres ficticios. La operación con 13 ítems se armó a partir de una hoja de despacho real.</p><button data-a="reset" type="button">Restablecer datos de ejemplo</button></div>`;
@@ -403,7 +436,19 @@ function vOp(id) {
       <tr class="tot"><td>Total a cobrar</td><td>${dots(o.estG + o.hon)}</td><td>${dots(k.total)}</td></tr></tbody></table></div>
       ${o.estG ? `<p class="small muted" style="margin-top:10px">Gastos ${k.dif > 0 ? 'por encima' : 'por debajo'} de lo estimado: <b class="mono">${gs(Math.abs(k.dif))}</b> (${(Math.abs(k.dif) / o.estG * 100).toFixed(1).replace('.', ',')}%)</p>` : ''}</div>
       <div class="card"><dl class="kv"><dt>Cobrado</dt><dd class="mono">${gs(k.c)}</dd><dt>Saldo</dt><dd class="mono"><b>${gs(k.saldo)}</b></dd><dt>Costos propios</dt><dd class="mono">${gs(k.p)}</dd><dt>Margen de la agencia</dt><dd class="mono"><b>${gs(k.margen)}</b></dd>${o.estado === 'Abierta' ? `<dt>Adelantado ahora</dt><dd class="mono">${gs(k.adel)}</dd>` : `<dt>Días desde el cierre</dt><dd class="mono">${k.dias}</dd>`}</dl></div>
-      ${o.estado === 'Abierta' ? '<button class="btn alt" type="button" data-a="cerrar" data-id="' + o.id + '">Marcar como cerrada y facturada</button>' : ''}`;
+      ${o.estado === 'Abierta' ? '<button class="btn alt" type="button" data-a="cerrar" data-id="' + o.id + '">Marcar como cerrada y facturada</button>' : ''}
+      <details class="card"><summary>Editar operación</summary>
+      <form class="form" id="opEdit" data-op="${o.id}">
+        <label>Cliente<select id="e-cl">${S.clientes.map(x => `<option value="${x.id}"${x.id === o.cl ? ' selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></label>
+        <label>Descripción<input id="e-desc" required value="${esc(o.desc)}"></label>
+        <label>Número de despacho o referencia<input id="e-ref" required value="${esc(o.ref)}"></label>
+        <label>Honorario (Gs.)<input id="e-hon" inputmode="numeric" required value="${dots(o.hon)}"></label>
+        <label>Gastos estimados por cuenta del cliente (Gs.)<input id="e-est" inputmode="numeric" required value="${dots(o.estG)}"></label>
+        <label>Estado<select id="e-estado"><option${o.estado === 'Abierta' ? ' selected' : ''}>Abierta</option><option${o.estado === 'Cerrada' ? ' selected' : ''}>Cerrada</option></select></label>
+        <label>Fecha de inicio<input id="e-fecha" type="date" required value="${o.fecha}"></label>
+        <label>Fecha de cierre (solo si está cerrada; define la antigüedad de la deuda)<input id="e-cierre" type="date" value="${o.cierre || ''}"></label>
+        <div class="btns"><button class="btn acc" type="submit">Guardar cambios</button><button class="btn bad" type="button" data-a="delOp" data-id="${o.id}">Borrar operación</button></div>
+      </form></details>`;
   } else if (ui.seg === 'liq') {
     if (!o.liq) body = '<div class="card empty">Esta operación todavía no tiene hoja de despacho cargada. En la versión real, acá se lee el PDF que baja el despachante.</div>';
     else {
@@ -425,7 +470,18 @@ function vOp(id) {
   } else if (ui.seg === 'movs') {
     const T = { g:'Gasto por cuenta del cliente', p:'Costo propio', c:'Cobro recibido' };
     const ms = o.movs.slice().sort((a, b) => (b.f > a.f ? 1 : -1));
-    body = `<div class="list">${ms.map(m => `<div class="row"><div class="main"><span class="t">${esc(m.c)}</span><span class="s">${fd(m.f)} · ${T[m.t]}</span></div><span class="amt" style="color:${m.t === 'c' ? 'var(--good)' : 'inherit'}">${m.t === 'c' ? '+' : '−'}${dots(m.m)}</span></div>`).join('') || '<div class="empty">Sin movimientos.</div>'}</div>
+    const opt = (v, t, sel) => `<option value="${v}"${v === sel ? ' selected' : ''}>${t}</option>`;
+    const mvRow = m => ui.editMov === m.id
+      ? `<form class="form" id="movEdit" data-op="${o.id}" data-mv="${m.id}">
+          <label>Tipo<select id="me-t">${opt('g', T.g, m.t)}${opt('p', 'Costo propio de la agencia', m.t)}${opt('c', T.c, m.t)}</select></label>
+          <label>Concepto<input id="me-c" required value="${esc(m.c)}"></label>
+          <label>Monto (Gs.)<input id="me-m" inputmode="numeric" required value="${dots(m.m)}"></label>
+          <label>Fecha<input id="me-f" type="date" required value="${m.f}"></label>
+          <div class="btns"><button class="btn acc" type="submit">Guardar</button><button class="btn alt" type="button" data-a="editMov" data-v="">Cancelar</button></div>
+          <button class="btn bad" type="button" data-a="delMov" data-id="${o.id}" data-v="${m.id}">Borrar movimiento</button></form>`
+      : `<button class="row rowbtn" type="button" data-a="editMov" data-v="${m.id}"><div class="main"><span class="t">${esc(m.c)}</span><span class="s">${fd(m.f)} · ${T[m.t]}</span></div><span class="amt" style="color:${m.t === 'c' ? 'var(--good)' : 'inherit'}">${m.t === 'c' ? '+' : '−'}${dots(m.m)}</span>${I.pen}</button>`;
+    body = `<div class="list">${ms.map(mvRow).join('') || '<div class="empty">Sin movimientos.</div>'}</div>
+    ${ms.length ? '<p class="muted small">Tocá un movimiento para corregirlo o borrarlo.</p>' : ''}
     <details class="card"><summary>Agregar movimiento</summary><form class="form" id="movForm" data-op="${o.id}">
       <label>Tipo<select id="mv-t"><option value="g">Gasto por cuenta del cliente</option><option value="p">Costo propio de la agencia</option><option value="c">Cobro recibido</option></select></label>
       <label>Concepto<input id="mv-c" required placeholder="Ej. Almacenaje depósito"></label>
@@ -452,9 +508,37 @@ function vCliente(id) {
   const k = cliCalc(id), ops = S.ops.filter(o => o.cl === id), txt = estadoTxt(id);
   return `<a class="back" href="#clientes">← Clientes</a><h1>${esc(c.nombre)}</h1><p class="muted small mono" style="margin-top:4px">RUC ${esc(c.ruc)}</p>
   <div class="sec"><div class="card hero"><div class="fig"><div><p class="lbl">Por cobrar</p><p class="val big">${bigN(k.total)}</p></div><div><p class="lbl">Adelantado en trámite</p><p class="val">${bigN(k.adel)}</p></div></div>${agingBar(k.b)}</div></div>
-  <div class="sec"><h2>Operaciones</h2><div class="list">${ops.map(opRow).join('')}</div></div>
-  <div class="sec"><h2>Estado de cuenta</h2><div class="card form"><textarea id="estado-txt" readonly aria-label="Texto del estado de cuenta">${esc(txt)}</textarea>
-  <div class="btns"><button class="btn" type="button" data-a="copiar">Copiar texto</button><a class="btn acc" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(txt)}">Enviar por WhatsApp</a></div></div></div>`;
+  <div class="sec"><h2>Operaciones</h2><div class="list">${ops.map(opRow).join('') || '<div class="empty">Este cliente todavía no tiene operaciones.</div>'}</div></div>
+  <div class="sec sec-edoc"><h2>Estado de cuenta</h2>${estadoDoc(c, k)}
+    <div class="btns"><a class="btn acc" data-a="wa" data-id="${c.id}" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.tel)}?text=${encodeURIComponent(txt)}">Enviar por WhatsApp</a><button class="btn alt" type="button" data-a="print" data-id="${c.id}">Imprimir o guardar PDF</button></div>
+    ${c.tel ? '' : '<p class="muted small">Agregá el celular del cliente (en "Editar cliente") para que WhatsApp se abra directo en su chat.</p>'}
+    <details class="card"><summary>Ver el texto del mensaje</summary><div class="form"><textarea id="estado-txt" readonly aria-label="Texto del estado de cuenta">${esc(txt)}</textarea>
+      <button class="btn alt" type="button" data-a="copiar" data-id="${c.id}">Copiar texto</button></div></details>
+    <h2 style="margin-top:8px">Envíos registrados</h2>
+    ${(c.envios || []).length ? `<div class="list">${c.envios.slice(0, 6).map(e => `<div class="row"><div class="main"><span class="t">${esc(e.via)}</span><span class="s mono">${fdt(e.f)}</span></div><span class="amt">${gs(e.saldo)}</span></div>`).join('')}</div>
+      <p class="muted small">Último envío ${(n => n === 0 ? 'hoy' : n === 1 ? 'ayer' : `hace ${n} días`)(days(iso(new Date(c.envios[0].f))))}. El monto es el saldo que figuraba al enviarlo.</p>`
+      : '<div class="card empty">Todavía no enviaste este estado de cuenta.</div>'}
+  </div>
+  <div class="sec"><details class="card"><summary>Editar cliente</summary><form class="form" id="cliEdit" data-id="${c.id}">
+    <label>Nombre o razón social<input id="ce-n" required value="${esc(c.nombre)}"></label>
+    <label>RUC<input id="ce-r" required value="${esc(c.ruc)}"></label>
+    <label>Celular para WhatsApp (opcional)<input id="ce-t" inputmode="tel" placeholder="0981 123 456" value="${esc(c.tel || '')}"></label>
+    <div class="btns"><button class="btn acc" type="submit">Guardar cambios</button><button class="btn bad" type="button" data-a="delCli" data-id="${c.id}">Borrar cliente</button></div>
+    ${ops.length ? `<p class="muted small">Para borrar este cliente primero hay que borrar sus ${ops.length} operación(es).</p>` : ''}
+  </form></details></div>`;
+}
+/* Estado de cuenta con formato de documento (también es lo que se imprime) */
+function estadoDoc(c, k) {
+  const rows = saldoRows(c.id), tot = sum(rows, r => r.k.saldo);
+  return `<div class="card edoc print-area">
+    <div class="edoc-head"><div><p class="edoc-kicker">Estado de cuenta</p><h3>${esc(c.nombre)}</h3><p class="mono small muted">RUC ${esc(c.ruc)}</p></div><p class="small muted" style="text-align:right">Al ${fd(iso(new Date()))}<br>Montos en Gs.</p></div>
+    ${rows.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Operación</th><th class="hm">Total</th><th class="hm">Cobrado</th><th>Saldo</th></tr></thead><tbody>
+      ${rows.map(({ o, k }) => `<tr><td>${esc(o.desc)}<span class="sub mono">${esc(o.ref)} · ${o.estado === 'Abierta' ? 'en trámite' : 'cerrada el ' + fd(o.cierre)}</span><span class="sub mono om">Total ${dots(k.total)} · cobrado ${dots(k.c)}</span></td><td class="hm">${dots(k.total)}</td><td class="hm">${dots(k.c)}</td><td><b>${dots(k.saldo)}</b></td></tr>`).join('')}
+      <tr class="tot"><td>Saldo total</td><td class="hm">${dots(sum(rows, r => r.k.total))}</td><td class="hm">${dots(sum(rows, r => r.k.c))}</td><td>${dots(tot)}</td></tr></tbody></table></div>
+      ${k.total ? `<p class="small" style="margin-top:12px">De las operaciones cerradas: ${k.b.map((v, i) => v ? `${BL[i].toLowerCase()} <b class="mono">${gs(v)}</b>` : '').filter(Boolean).join(' · ')}.</p>` : ''}`
+      : '<p class="empty">No tiene saldo pendiente. ¡Al día!</p>'}
+    <p class="small muted edoc-foot">Total = gastos pagados por cuenta del cliente + honorario. Ante cualquier duda sobre un monto, consultanos.</p>
+  </div>`;
 }
 function vCobros() {
   const cs = S.clientes.map(c => ({ c, k:cliCalc(c.id) })).filter(r => r.k.total > 0).sort((a, b) => b.k.b[2] - a.k.b[2] || b.k.total - a.k.total);
@@ -484,19 +568,39 @@ function render() {
 let tt;
 function toast(t) { const e = $('#toast'); e.textContent = t; e.hidden = false; clearTimeout(tt); tt = setTimeout(() => { e.hidden = true; }, 2200); }
 const money = v => parseInt(String(v).replace(/\D/g, ''), 10) || 0;
-window.addEventListener('hashchange', () => { if (/^op-/.test(location.hash.slice(1))) ui.seg = 'resumen'; render(); });
+window.addEventListener('hashchange', () => { if (/^op-/.test(location.hash.slice(1))) ui.seg = 'resumen'; ui.editMov = null; render(); });
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-a]'); if (!a) return;
   const v = a.dataset.v, id = +a.dataset.id;
   if (a.dataset.a === 'filtro') { ui.filtro = v; render(); }
-  else if (a.dataset.a === 'seg') { ui.seg = v; render(); }
+  else if (a.dataset.a === 'seg') { ui.seg = v; ui.editMov = null; render(); }
+  else if (a.dataset.a === 'editMov') { ui.editMov = v ? +v : null; render(); const f = $('#me-c'); if (f) f.focus(); }
+  else if (a.dataset.a === 'delMov') {
+    const o = S.ops.find(x => x.id === id);
+    if (!confirm('¿Borrar este movimiento? No se puede deshacer.')) return;
+    o.movs = o.movs.filter(m => m.id !== +v); ui.editMov = null; save(); render(); toast('Movimiento borrado');
+  }
+  else if (a.dataset.a === 'delOp') {
+    const o = S.ops.find(x => x.id === id);
+    if (!confirm(`¿Borrar la operación "${o.desc}"?\nSe borran también sus gastos, cobros y documentos. No se puede deshacer.`)) return;
+    S.ops = S.ops.filter(x => x.id !== id); save(); location.hash = '#operaciones'; toast('Operación borrada');
+  }
+  else if (a.dataset.a === 'delCli') {
+    const c = cliente(id), n = S.ops.filter(o => o.cl === id).length;
+    if (n) return toast(`Tiene ${n} operación(es): borralas primero`);
+    if (!confirm(`¿Borrar el cliente "${c.nombre}"? No se puede deshacer.`)) return;
+    S.clientes = S.clientes.filter(x => x.id !== id); save(); location.hash = '#clientes'; toast('Cliente borrado');
+  }
+  else if (a.dataset.a === 'wa') { registrar(cliente(id), 'Enviado por WhatsApp'); setTimeout(render, 400); } // el enlace se abre solo
+  else if (a.dataset.a === 'print') { registrar(cliente(id), 'Impreso o guardado en PDF'); render(); setTimeout(() => window.print(), 50); }
   else if (a.dataset.a === 'doc') { const o = S.ops.find(x => x.id === id); o.docs[v] = !o.docs[v]; save(); render(); }
   else if (a.dataset.a === 'cerrar') { const o = S.ops.find(x => x.id === id); o.estado = 'Cerrada'; o.cierre = iso(new Date()); save(); render(); toast('Operación cerrada y facturada'); }
   else if (a.dataset.a === 'impCancel') { ui.imp = null; render(); }
   else if (a.dataset.a === 'reset') { S = seed(); save(); render(); toast('Datos de ejemplo restablecidos'); }
   else if (a.dataset.a === 'copiar') {
-    const ta = $('#estado-txt'); const fallback = () => { ta.focus(); ta.select(); toast('Texto seleccionado, copialo manualmente'); };
-    try { navigator.clipboard.writeText(ta.value).then(() => toast('Estado de cuenta copiado'), fallback); } catch (err) { fallback(); }
+    const ta = $('#estado-txt'); const fallback = () => { ta.closest('details').open = true; ta.focus(); ta.select(); toast('Texto seleccionado, copialo manualmente'); };
+    const ok = () => { registrar(cliente(id), 'Texto copiado'); render(); toast('Estado de cuenta copiado'); };
+    try { navigator.clipboard.writeText(ta.value).then(ok, fallback); } catch (err) { fallback(); }
   }
 });
 document.addEventListener('change', e => { if (e.target.id === 'impFile' && e.target.files[0]) onFile(e.target.files[0]); });
@@ -509,11 +613,26 @@ document.addEventListener('submit', e => {
   } else if (f.id === 'movForm') {
     const o = S.ops.find(x => x.id === +f.dataset.op), m = money($('#mv-m').value); if (!m) return toast('Ingresá un monto');
     o.movs.push({ id:Date.now(), f:iso(new Date()), t:$('#mv-t').value, c:$('#mv-c').value.trim(), m }); save(); render(); toast('Movimiento agregado');
+  } else if (f.id === 'movEdit') {
+    const o = S.ops.find(x => x.id === +f.dataset.op), mv = o.movs.find(x => x.id === +f.dataset.mv), m = money($('#me-m').value); if (!m) return toast('Ingresá un monto');
+    Object.assign(mv, { t:$('#me-t').value, c:$('#me-c').value.trim(), m, f:$('#me-f').value || mv.f }); ui.editMov = null; save(); render(); toast('Movimiento actualizado');
+  } else if (f.id === 'opEdit') {
+    const o = S.ops.find(x => x.id === +f.dataset.op), ref = $('#e-ref').value.trim();
+    if (S.ops.some(x => x.id !== o.id && x.ref === ref)) return toast('Ya hay otra operación con ese número');
+    const estado = $('#e-estado').value;
+    Object.assign(o, { cl:+$('#e-cl').value, desc:$('#e-desc').value.trim(), ref, hon:money($('#e-hon').value), estG:money($('#e-est').value), estado, fecha:$('#e-fecha').value || o.fecha,
+      cierre:estado === 'Cerrada' ? ($('#e-cierre').value || o.cierre || iso(new Date())) : null });
+    save(); render(); toast('Operación actualizada');
+  } else if (f.id === 'cliEdit') {
+    const c = cliente(+f.dataset.id), ruc = $('#ce-r').value.trim();
+    if (S.clientes.some(x => x.id !== c.id && rucKey(x.ruc) === rucKey(ruc))) return toast('Ya hay otro cliente con ese RUC');
+    Object.assign(c, { nombre:$('#ce-n').value.trim(), ruc, tel:$('#ce-t').value.trim() }); save(); render(); toast('Cliente actualizado');
   } else if (f.id === 'newOp') {
     const id = Math.max(0, ...S.ops.map(o => o.id)) + 1;
     S.ops.push({ id, cl:+$('#n-cl').value, ref:'26003-NUEVA-' + id, reg:'Por definir', aduana:'Por definir', desc:$('#n-desc').value.trim(), estado:'Abierta', fecha:iso(new Date()), cierre:null, estG:money($('#n-est').value), hon:money($('#n-hon').value), docs:{ factura:false, crt:false, packing:false, mandato:false, hoja:false }, movs:[] });
     save(); location.hash = '#op-' + id; toast('Operación creada');
   } else if (f.id === 'newCli') {
+    if (S.clientes.some(x => rucKey(x.ruc) === rucKey($('#c-r').value))) return toast('Ya existe un cliente con ese RUC');
     const id = Math.max(0, ...S.clientes.map(c => c.id)) + 1; S.clientes.push({ id, nombre:$('#c-n').value.trim(), ruc:$('#c-r').value.trim() }); save(); location.hash = '#cliente-' + id; toast('Cliente agregado');
   }
 });
