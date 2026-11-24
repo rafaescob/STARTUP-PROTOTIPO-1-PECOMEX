@@ -2,8 +2,10 @@
    Colores de la marca (logo): azul petróleo y naranja. El naranja se usa poco: pestaña activa y la franja diagonal del membrete.
    Tipografía: Manrope para la app (números tabulares en montos); Source Serif 4 solo en títulos de documentos impresos. */
 :root{
-  --paper:#F3F6F8; --card:#FFFFFF; --ink:#14232E; --muted:#5B6B77; --line:#DCE4E9; --line2:#EDF1F4;
-  --petrol:#17607F; --petrol-2:#1E7A9C; --petrol-tint:#E6F1F6; --orange:#EE8A2F; --orange-ink:#A9580F;
+  --paper:#EDF2F5; --card:#FFFFFF; --ink:#12212B; --muted:#5A6A76; --line:#D9E2E8; --line2:#EAF0F3;
+  --petrol:#17607F; --petrol-2:#1E7A9C; --petrol-tint:#E4EFF5; --orange:#EE8A2F; --orange-ink:#A9580F; --orange-tint:#FDEBDB;
+  --deep:#0C3446; --side:#0E3A4E; --side-ink:#CFE2EC; --side-muted:#8FB3C5;
+  --mast:linear-gradient(140deg,#0C3D53 0%,#145A77 52%,#1B7396 100%);
   --accent:var(--petrol); --accent-ink:#FFFFFF; --accent-tint:var(--petrol-tint);
   --good:#1F7A4D; --good-tint:#E2F2E9; --warn:#A9580F; --warn-tint:#FCEEDC; --bad:#B3362B; --bad-tint:#FBE5E2;
   --a0:#2E8B7A; --a1:#E2A33A; --a2:#C8483B;
@@ -17,12 +19,14 @@
   --petrol:#62B3D3; --petrol-2:#2A87AB; --petrol-tint:#16313F; --orange:#F29B4C; --orange-ink:#F4B072;
   --accent-ink:#0D171D; --good:#6CCB98; --good-tint:#15301F; --warn:#F4B072; --warn-tint:#3A2812; --bad:#FF8E80; --bad-tint:#3F1C19;
   --a0:#4FB59F; --a1:#E8B455; --a2:#E0786B; --hero:#123B4F; --hero-ink:#F2F7FA; --hero-muted:#9CC3D6;
+  --orange-tint:#3A2812; --side:#0A1A22; --side-ink:#C9DCE6; --side-muted:#7F9DAD; --mast:linear-gradient(140deg,#0B2E3E 0%,#11455C 60%,#165A78 100%);
   --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark}}
 :root[data-theme="dark"]{
   --paper:#0D171D; --card:#14222B; --ink:#E5EDF2; --muted:#93A6B3; --line:#23353F; --line2:#1A2B35;
   --petrol:#62B3D3; --petrol-2:#2A87AB; --petrol-tint:#16313F; --orange:#F29B4C; --orange-ink:#F4B072;
   --accent-ink:#0D171D; --good:#6CCB98; --good-tint:#15301F; --warn:#F4B072; --warn-tint:#3A2812; --bad:#FF8E80; --bad-tint:#3F1C19;
   --a0:#4FB59F; --a1:#E8B455; --a2:#E0786B; --hero:#123B4F; --hero-ink:#F2F7FA; --hero-muted:#9CC3D6;
+  --orange-tint:#3A2812; --side:#0A1A22; --side-ink:#C9DCE6; --side-muted:#7F9DAD; --mast:linear-gradient(140deg,#0B2E3E 0%,#11455C 60%,#165A78 100%);
   --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark}
 
 /* Base */
@@ -60,8 +64,20 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* Secciones y tarjetas */
 .sec{margin-top:28px;display:flex;flex-direction:column;gap:10px}
 .sec>h2{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
-.hero{display:flex;flex-direction:column;gap:16px;background:var(--hero);border-color:transparent;color:var(--hero-ink);box-shadow:var(--shadow);padding:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 1px 2px rgba(18,33,43,.04)}
+/* Tarjeta principal: azul petróleo con el globo del logo en líneas finas y el arco naranja de sus flechas */
+.hero{position:relative;overflow:hidden;isolation:isolate;display:flex;flex-direction:column;gap:16px;background:var(--mast);border-color:transparent;color:var(--hero-ink);box-shadow:0 14px 34px -18px rgba(12,52,70,.55);padding:20px;border-radius:18px}
+.hero::before{content:"";position:absolute;z-index:-1;width:250px;height:250px;right:-62px;top:-58px;pointer-events:none;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none'%3E%3Cg stroke='%23fff' stroke-opacity='.13' stroke-width='1.4'%3E%3Ccircle cx='100' cy='100' r='66'/%3E%3Cellipse cx='100' cy='100' rx='27' ry='66'/%3E%3Cellipse cx='100' cy='100' rx='50' ry='66'/%3E%3Cpath d='M100 34v132M34 100h132M42 67h116M42 133h116'/%3E%3C/g%3E%3Cpath d='M26 78A78 78 0 0 1 150 37' stroke='%23EE8A2F' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M142 28l9 9-12 3' stroke='%23EE8A2F' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M174 122A78 78 0 0 1 50 163' stroke='%23EE8A2F' stroke-opacity='.55' stroke-width='3.2' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat}
+.hero:not(.mast)::before{width:150px;height:150px;right:-42px;top:-52px}
+.mast{gap:20px;padding:22px 20px}
+.mast-a{display:flex;flex-direction:column;gap:18px}
+.mast-h h1{color:var(--hero-ink);font-size:28px}
+.mast-date{font-size:13px;font-weight:600;color:var(--hero-muted);margin-bottom:4px}
+.mast-sub{font-size:13.5px;color:var(--hero-muted);margin-top:4px}
+.mast-b{display:flex;flex-direction:column;gap:10px;padding-top:16px;border-top:1px solid rgba(255,255,255,.14)}
+.mast-b>.lbl{font-size:13px;font-weight:600;color:var(--hero-muted)}
+.mast .fig .val{font-size:23px}
 .hero .muted,.hero .lbl{color:var(--hero-muted)!important}
 .hero .val,.hero .fig .val.big,.hero b{color:var(--hero-ink)}
 .hero .u{color:var(--hero-muted)}
@@ -86,7 +102,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .dot{width:10px;height:10px;border-radius:3px;display:inline-block}
 
 /* Listas */
-.list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden}
+.list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:16px;background:var(--card);overflow:hidden;box-shadow:0 1px 2px rgba(18,33,43,.04)}
 .row{display:flex;align-items:center;gap:12px;padding:13px 14px;border-top:1px solid var(--line2);min-height:58px}
 .row:first-child{border-top:0}
 a.row:hover,.rowbtn:hover{background:var(--paper)}
@@ -99,6 +115,13 @@ a.row:active{background:var(--petrol-tint)}
 .chev{width:16px;height:16px;color:var(--muted);flex:none}
 .stripe{width:4px;align-self:stretch;border-radius:2px;flex:none}
 .stripe.s2{background:var(--a2)}.stripe.s1{background:var(--a1)}.stripe.s0{background:var(--a0)}.stripe.sn{background:var(--line)}
+/* Iniciales del cliente (color según la deuda más vieja) y código de régimen */
+.av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:13.5px;font-weight:800;letter-spacing:.02em;background:var(--petrol-tint);color:var(--petrol);box-shadow:inset 0 0 0 2px var(--card),0 0 0 2px var(--line)}
+.av.s2{box-shadow:inset 0 0 0 2px var(--card),0 0 0 2px var(--a2)}.av.s1{box-shadow:inset 0 0 0 2px var(--card),0 0 0 2px var(--a1)}.av.s0{box-shadow:inset 0 0 0 2px var(--card),0 0 0 2px var(--a0)}
+.rg{flex:none;min-width:46px;padding:6px 0;border-radius:9px;text-align:center;font-size:11.5px;font-weight:800;letter-spacing:.03em;background:var(--petrol-tint);color:var(--petrol)}
+.rg-e{background:var(--orange-tint);color:var(--orange-ink)}.rg-o{background:var(--line2);color:var(--muted)}
+.row .s.ref{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;letter-spacing:.01em}
+@media (max-width:420px){.rg{min-width:42px;font-size:11px}.row{gap:10px;padding-inline:12px}}
 .rowbtn{width:100%;background:none;border-inline:0;border-bottom:0;text-align:left;cursor:pointer}
 .rowbtn:first-child{border-top:0}
 .rowbtn:active{background:var(--petrol-tint)}
@@ -162,7 +185,7 @@ details.card[open]>summary{margin-bottom:14px}
 .ck{list-style:none;display:grid;gap:8px;padding:0;margin:0}.ck li{display:flex;gap:10px;align-items:flex-start;font-size:14px}.ck li>span:first-child{font-weight:800;width:18px;flex:none}.ck li.ok>span:first-child{color:var(--good)}.ck li.bad>span:first-child{color:var(--bad)}
 
 /* Barra de navegación: abajo en el celular */
-.tabs{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:min(100%,480px);display:grid;grid-template-columns:repeat(4,1fr);background:var(--card);border-top:1px solid var(--line);padding:4px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));z-index:5}
+.tabs{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:min(100%,480px);display:grid;grid-template-columns:repeat(4,1fr);background:color-mix(in srgb,var(--card) 90%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:4px max(8px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px));z-index:5}
 .navlogo{display:none}
 .tabs a{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11.5px;font-weight:600;color:var(--muted);padding:8px 0 4px;min-height:54px;justify-content:center;border-radius:10px}
 .tabs a svg{width:22px;height:22px}
@@ -180,7 +203,7 @@ details.card[open]>summary{margin-bottom:14px}
 .cm-col{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
 .cm-track{position:relative;width:100%;height:120px;border-bottom:1px solid var(--line)}
 .cm-bar{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:66%;max-width:40px;border-radius:6px 6px 2px 2px;background:var(--petrol);opacity:.28}
-.cm-bar.now{opacity:1}
+.cm-bar.now{opacity:1;background:var(--orange)}
 .cm-v{position:absolute;left:0;right:0;text-align:center;font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap}
 .cm-l{font-size:12px;font-weight:600;color:var(--muted)}
 .up{color:var(--good);font-weight:600}.down{color:var(--bad);font-weight:600}
@@ -227,22 +250,35 @@ details.card[open]>summary{margin-bottom:14px}
   body{padding-left:248px}
   body::before{margin-left:-248px}
   .wrap{max-width:1080px;padding-block:38px 56px;padding-inline:40px}
-  .tabs{left:0;top:0;bottom:0;transform:none;width:248px;display:flex;flex-direction:column;gap:4px;border-top:0;border-right:1px solid var(--line);padding:0 14px 24px}
+  /* Barra lateral oscura (petróleo profundo); el logo va sobre una tarjeta blanca */
+  .tabs{left:0;top:0;bottom:0;transform:none;width:248px;display:flex;flex-direction:column;gap:4px;border-top:0;border-right:0;padding:0 14px 24px;background:var(--side);-webkit-backdrop-filter:none;backdrop-filter:none}
   .tabs::before{content:"";display:block;height:4px;margin:0 -14px;background:var(--band)}
-  .navlogo{display:block;width:176px;height:auto;margin:26px 8px 26px}
-  .tabs a{flex-direction:row;justify-content:flex-start;gap:12px;font-size:15px;padding:10px 12px;min-height:46px}
-  .tabs a:hover{background:var(--paper);color:var(--ink)}
-  .tabs a[aria-current="page"]{background:var(--petrol-tint)}
+  .tabs::after{content:"Control financiero para agencias de despacho";margin-top:auto;padding:0 12px;font-size:12px;line-height:1.45;color:var(--side-muted)}
+  .navlogo{display:block;width:100%;height:auto;margin:22px 0 26px;padding:12px 16px;background:#fff;border-radius:14px;box-sizing:border-box}
+  .tabs a{flex-direction:row;justify-content:flex-start;gap:12px;font-size:15px;padding:10px 12px;min-height:46px;color:var(--side-ink)}
+  .tabs a:hover{background:rgba(255,255,255,.06);color:#fff}
+  .tabs a[aria-current="page"]{background:rgba(255,255,255,.1);color:#fff}
   .tabs a[aria-current="page"]::before{top:50%;left:0;transform:translateY(-50%);width:3px;height:22px;border-radius:0 3px 3px 0}
+  /* Inicio: el panel de cabecera ocupa todo el ancho, cifras a la izquierda y antigüedad a la derecha */
+  #app[data-v="inicio"]>.sec.sec-hero{grid-column:1/-1;margin-top:0}
+  .mast{padding:26px 28px}
+  .mast-h h1{font-size:32px}
+  .mast .fig .val{font-size:26px}
+  .mast::before{width:280px;height:280px;right:-60px;top:-70px}
+}
+@media (min-width:1200px){
+  .mast{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:28px;padding:30px 200px 30px 32px;align-items:end}
+  .mast-b{padding-top:0;padding-left:28px;border-top:0;border-left:1px solid rgba(255,255,255,.14)}
+  .mast-h h1{font-size:36px}
+  .mast .fig .val{font-size:28px}
+  .mast::before{width:250px;height:250px;right:-40px;top:50%;transform:translateY(-50%)}
   .toast{bottom:28px;left:calc(50% + 124px)}
   #app{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px;align-items:start}
   #app>*{grid-column:1/-1}
   #app[data-v="inicio"]>.sec,#app[data-v="cliente"]>.sec{grid-column:auto}
-  #app[data-v="inicio"]>.sec:nth-of-type(1){margin-top:28px}
   .top .brand{display:none}
   h1{font-size:32px}
 }
-@media (min-width:900px) and (prefers-color-scheme:dark){:root:not([data-theme="light"]) .navlogo{background:#fff;border-radius:10px;padding:8px 10px}}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .toplogo,:root:not([data-theme="light"]) .doclogo,:root:not([data-theme="light"]) .logopick img{background:#fff;border-radius:8px;padding:4px 8px}}
 
 /* Impresión: solo el documento, con los colores de la marca */

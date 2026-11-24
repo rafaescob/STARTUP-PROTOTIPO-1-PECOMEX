@@ -16,6 +16,9 @@ Prototipo en HTML/CSS/JS puro (sin framework), datos de ejemplo ficticios, guard
 
 ## Diseño (identidad Pecomex)
 - Colores del logo: azul petróleo `#17607F`/`#1E7A9C` (principal) y naranja `#EE8A2F` (solo detalles: pestaña activa y la franja diagonal `--band` del membrete). Fondo `#F3F6F8`, tinta `#14232E`. Tema oscuro incluido.
+- Elemento distintivo: las tarjetas `.hero` llevan degradé petróleo (`--mast`) y de fondo el **globo del logo en líneas finas con el arco naranja** (SVG en `.hero::before`). En Inicio es el panel de cabecera `.mast` con fecha, título, cifras y antigüedad; a dos columnas desde 1200 px.
+- Computadora: barra lateral oscura (`--side`) con el logo sobre tarjeta blanca. Celular: barra inferior translúcida.
+- Listas: iniciales del cliente en círculo `.av` (borde con el color de su deuda más vieja), código de régimen `.rg` (IT04, IC04…; naranja si es exportación) y franja de urgencia en las alertas. Mes actual del gráfico en naranja.
 - Tipografía: Manrope (app; montos con números tabulares, sin monoespaciada) y Source Serif 4 solo en títulos de documentos (`.edoc-kicker`). Títulos sin mayúsculas forzadas.
 - `icons/logo-pecomex.png` (recortado del membrete, fondo transparente; **sin** teléfonos ni correo porque el repo es público). Íconos de la app = el globo.
 - Documentos (estado de cuenta y liquidación) con membrete: logo, título en serif y franja de la marca al pie; se imprimen con colores. Cada agencia puede subir su propio logo (`S.cfg.logo`, se achica a 600×220) desde "Datos de la liquidación".

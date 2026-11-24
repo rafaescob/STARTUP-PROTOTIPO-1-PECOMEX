@@ -140,6 +140,7 @@ const dec = n => { const [i, d] = n.toFixed(2).split('.'); return i.replace(/\B(
 const iso = d => new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); // fecha local, no UTC
 const pad = n => String(n).padStart(2, '0');
 const fdt = s => { const d = new Date(s); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fecLarga = (d = new Date()) => { const s = d.toLocaleDateString('es-PY', { weekday:'long', day:'numeric', month:'long' }); return s.charAt(0).toUpperCase() + s.slice(1); };
 const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const abbr = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.', ',') + ' M' : n >= 1e3 ? Math.round(n / 1e3) + ' mil' : dots(n);
 const waNum = t => { let d = String(t || '').replace(/\D/g, ''); if (d.startsWith('0')) d = '595' + d.slice(1); return d; }; // 0981… → 595981…
@@ -256,15 +257,20 @@ function agingBar(b) {
   return `<div class="bar" role="img" aria-label="Por cobrar por antigüedad: ${b.map((v, i) => BL[i] + ' ' + gs(v)).join(', ')}">${b.map((v, i) => v ? `<span class="bseg ${cl[i]}" style="flex:${v}"></span>` : '').join('')}</div>
   <ul class="legend">${b.map((v, i) => `<li><i class="dot ${cl[i]}"></i><span>${BL[i]}</span><b class="mono">${gs(v)}</b></li>`).join('')}</ul>`;
 }
+/* Código de régimen (IT04, IC04, EC01…) sacado del número de despacho o del régimen */
+const regCode = o => (String(o.ref).match(/^\d{5}([A-Z]{2}\d{2})/) || String(o.reg).match(/^([A-Z]{2}\d{2})/) || [, /maquila/i.test(o.reg) ? 'MQ' : 'OP'])[1];
+const regChip = o => { const r = regCode(o); return `<span class="rg ${/^E/.test(r) ? 'rg-e' : /^I/.test(r) ? 'rg-i' : 'rg-o'}" title="${esc(o.reg)}">${esc(r)}</span>`; };
+/* Iniciales del cliente para el círculo (sin S.A., S.R.L., etc.) */
+const inic = n => String(n || '?').replace(/\b(S\.?A\.?|S\.?R\.?L\.?|SAECA|SA|SRL|DE|DEL|LA|LOS|Y)\b\.?/gi, ' ').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
 function opRow(o) {
   const k = calc(o), c = cliente(o.cl);
   const miss = Object.values(o.docs).filter(v => !v).length;
-  return `<a class="row" href="#op-${o.id}"><div class="main"><span class="t">${esc(o.desc)}</span><span class="s">${esc(c.nombre)} · <span class="mono">${esc(o.ref)}</span></span></div>
+  return `<a class="row" href="#op-${o.id}">${regChip(o)}<div class="main"><span class="t">${esc(o.desc)}</span><span class="s">${esc(c.nombre)}</span><span class="s mono ref">${esc(o.ref)}</span></div>
   <div class="r"><span class="amt">${gs(k.saldo)}</span>${pill(o.estado, o.estado === 'Abierta' ? '' : k.saldo > 0 ? 'warn' : 'ok')}${miss ? pill(miss + ' doc. falta' + (miss > 1 ? 'n' : ''), 'bad') : ''}</div>${I.chev}</a>`;
 }
 function cliRow(c) {
   const k = cliCalc(c.id);
-  return `<a class="row" href="#cliente-${c.id}"><i class="stripe ${stClass(k.peor)}"></i><div class="main"><span class="t">${esc(c.nombre)}</span><span class="s mono">RUC ${esc(c.ruc)}</span></div>
+  return `<a class="row" href="#cliente-${c.id}"><span class="av ${stClass(k.peor)}" aria-hidden="true">${esc(inic(c.nombre))}</span><div class="main"><span class="t">${esc(c.nombre)}</span><span class="s mono">${c.ruc ? 'RUC ' + esc(c.ruc) : 'RUC sin cargar'}</span></div>
   <div class="r"><span class="amt">${gs(k.total)}</span>${k.peor === 2 ? pill('+60 días', 'bad') : k.peor === 1 ? pill('31 a 60 días', 'warn') : k.total ? pill('al día', 'ok') : pill('sin deuda', 'ok')}</div>${I.chev}</a>`;
 }
 
@@ -301,14 +307,15 @@ function vInicio() {
   ops.forEach((o, i) => { if (o.estado === 'Abierta' && o.estG > 0 && ks[i].dif > o.estG * 0.05) alerts.push({ h:'#op-' + o.id, t:`${o.desc}: gastos ${gs(ks[i].dif)} sobre lo estimado`, s:'Desvío de costos', k:'warn' }); });
   const abiertas = ops.filter(o => o.estado === 'Abierta');
   return `<div class="top"><div class="brand"><img class="toplogo" src="icons/logo-pecomex.png" alt="Pecomex"></div>${pill('Datos de ejemplo')}</div>
-  <h1>Hoy en la agencia</h1>
-  <p class="muted small" style="margin-top:4px">${fd(iso(new Date()))} · ${abiertas.length} operaciones abiertas</p>
-  <div class="sec"><div class="card hero">
-    <div class="fig"><div><p class="lbl">Adelantado por la agencia</p><p class="val big">${bigN(adel)}</p></div><div><p class="lbl">Por cobrar (cerradas)</p><p class="val">${bigN(xc)}</p></div></div>
-    ${agingBar(b)}
+  <div class="sec sec-hero"><div class="card hero mast">
+    <div class="mast-a">
+      <div class="mast-h"><p class="mast-date">${fecLarga()}</p><h1>Hoy en la agencia</h1><p class="mast-sub">${abiertas.length} operaciones abiertas · ${S.clientes.length} clientes</p></div>
+      <div class="fig"><div><p class="lbl">Adelantado por la agencia</p><p class="val big">${bigN(adel)}</p></div><div><p class="lbl">Por cobrar (cerradas)</p><p class="val">${bigN(xc)}</p></div></div>
+    </div>
+    <div class="mast-b"><p class="lbl">Antigüedad de lo que falta cobrar</p>${agingBar(b)}</div>
   </div></div>
   <div class="sec"><h2>Cobros por mes</h2>${chartCobros()}</div>
-  <div class="sec"><h2>Requieren atención${alerts.length > 6 ? ` <span class="small" style="text-transform:none;letter-spacing:0">${alerts.length} en total</span>` : ''}</h2>${alerts.length ? `<div class="list">${alerts.sort((x, y) => (y.k === 'bad') - (x.k === 'bad')).slice(0, 6).map(a => `<a class="row" href="${a.h}"><div class="main"><span class="t">${esc(a.t)}</span><span class="s">${a.s}</span></div>${pill(a.k === 'bad' ? 'Urgente' : 'Revisar', a.k)}${I.chev}</a>`).join('')}</div>` : '<div class="card empty">Todo en orden por ahora.</div>'}</div>
+  <div class="sec"><h2>Requieren atención${alerts.length > 6 ? ` <span class="small" style="text-transform:none;letter-spacing:0">${alerts.length} en total</span>` : ''}</h2>${alerts.length ? `<div class="list">${alerts.sort((x, y) => (y.k === 'bad') - (x.k === 'bad')).slice(0, 6).map(a => `<a class="row" href="${a.h}"><i class="stripe ${a.k === 'bad' ? 's2' : 's1'}"></i><div class="main"><span class="t">${esc(a.t)}</span><span class="s">${a.s}</span></div>${pill(a.k === 'bad' ? 'Urgente' : 'Revisar', a.k)}${I.chev}</a>`).join('')}</div>` : '<div class="card empty">Todo en orden por ahora.</div>'}</div>
   <div class="sec"><h2>Operaciones abiertas <a href="#operaciones" class="small" style="text-transform:none;letter-spacing:0;color:var(--accent)">Ver todas</a></h2><div class="list">${abiertas.map(opRow).join('') || '<div class="empty">No hay operaciones abiertas.</div>'}</div></div>
   <div class="sec">${datosCard()}</div>
   <div class="foot"><p>Prototipo con datos de ejemplo y nombres ficticios. La operación con 13 ítems se armó a partir de una hoja de despacho real.</p><button data-a="reset" type="button">Restablecer datos de ejemplo</button></div>`;
