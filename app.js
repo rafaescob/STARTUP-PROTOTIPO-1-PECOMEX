@@ -279,6 +279,14 @@ const tcase = s => String(s || '').toLowerCase().replace(/(^|[\s\-\/(])([a-záé
 const sent = s => { s = String(s || '').toLowerCase(); return s.charAt(0).toUpperCase() + s.slice(1); };
 const REG = { IT04:'Importación temporaria', IC04:'Importación definitiva', IC01:'Importación definitiva', EC01:'Exportación definitiva', TR01:'Tránsito aduanero' };
 function regTxt(r) { const m = String(r || '').match(/^(\w+)\s*-\s*(.+)$/); if (!m) return r || 'Por definir'; return m[1] + ' · ' + (REG[m[1]] || sent(m[2].split(/ S\//)[0])); }
+/* Honorario mínimo según la escala (porcentajes sobre el valor imponible; exportación con 50 % de descuento) */
+const ESCALA = [[1, 10e6, 50000, 0.02], [10000001, 50e6, 250000, 0.01], [50000001, 100e6, 750000, 0.008], [100000001, 250e6, 1550000, 0.005], [250000001, Infinity, 2800000, 0.003]];
+function honorario(imp, exp) {
+  if (!imp || imp < 1) return { total:0, basico:0, adic:0, pct:0, desc:0, tramo:null };
+  const t = ESCALA.find(r => imp <= r[1]), adic = Math.round((imp - (t[0] - 1)) * t[3]), bruto = t[2] + adic, desc = exp ? Math.round(bruto / 2) : 0;
+  return { total:bruto - desc, basico:t[2], adic, pct:t[3], desc, tramo:t };
+}
+const esExport = r => /^E/i.test(String(r || '').trim());
 function checks(d) {
   const sf = sum(d.items, i => i.fob || 0), si = sum(d.items, i => i.imponibleGs || 0), dI = (d.imponibleGs || 0) - si;
   const st = d.total ? d.total.trib : 0, sl = sum(d.liquidacion, r => r.trib), sg = sum(d.liquidacion, r => r.gar);
@@ -297,7 +305,7 @@ function impCard() { return `<div class="sec"><div class="card imp">
   </div></div>${ui.imp && ui.imp.data ? impPreview(ui.imp.data) : ''}`; }
 function impPreview(d) {
   const cl = S.clientes.find(c => rucKey(c.ruc) === rucKey(d.importador.ruc)), dup = S.ops.find(o => o.ref === d.despacho);
-  const ck = checks(d), ok = ck.every(c => c[1]);
+  const ck = checks(d), ok = ck.every(c => c[1]), H = honorario(d.imponibleGs, esExport(d.regimen));
   return `<div class="sec"><div class="card imp"><h3>Vista previa de la hoja</h3>
     <dl class="kv" style="margin-top:10px">
       <dt>Despacho</dt><dd class="mono">${esc(d.despacho)}</dd>
@@ -316,7 +324,8 @@ function impPreview(d) {
     ${ok ? '' : '<div class="note warn" style="margin-top:10px">Alguno de los controles no cuadra. Revisá los datos antes de confiar en esta operación.</div>'}
     ${dup ? `<div class="note warn" style="margin-top:10px"><b>Esta hoja ya fue cargada</b> como operación existente. No se puede crear dos veces.</div>` : ''}
     <form class="form" id="impForm" style="margin-top:14px">
-      <label>Honorario pactado (Gs.)<input id="i-hon" inputmode="numeric" required placeholder="3.000.000"></label>
+      <label>Honorario (Gs.) · calculado con la escala, podés cambiarlo<input id="i-hon" inputmode="numeric" required value="${dots(H.total)}"></label>
+      <p class="small muted" style="margin:-4px 0 0">${H.tramo ? `Básico ${gs(H.basico)} + ${String(H.pct * 100).replace('.', ',')} % sobre el excedente de ${gs(H.tramo[0] - 1)} (${gs(H.adic)})${H.desc ? ` − 50 % por exportación (${gs(H.desc)})` : ''}.` : 'No hay valor imponible para calcular.'}</p>
       <label>Gastos estimados por cuenta del cliente (Gs.)<input id="i-est" inputmode="numeric" required value="${d.total ? dots(d.total.trib) : ''}"></label>
       <div class="btns"><button class="btn acc" type="submit" ${dup ? 'disabled' : ''}>Crear operación</button><button class="btn alt" type="button" data-a="impCancel">Descartar</button></div>
     </form></div></div>`;
