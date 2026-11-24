@@ -148,4 +148,8 @@ details.card[open]>summary{margin-bottom:14px}
   h1{font-size:30px}
 }
 
+.filebtn{cursor:pointer;width:100%}
+.ck{list-style:none;display:grid;gap:8px;padding:0;margin:0}.ck li{display:flex;gap:10px;align-items:flex-start;font-size:14px}.ck li>span:first-child{font-weight:700;width:18px;flex:none}.ck li.ok>span:first-child{color:var(--good)}.ck li.bad>span:first-child{color:var(--bad)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+
 :root{padding-top:env(safe-area-inset-top,0px)}

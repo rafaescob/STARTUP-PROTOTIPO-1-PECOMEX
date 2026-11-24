@@ -14,3 +14,4 @@ Abrir la dirección en Safari, tocar Compartir y elegir "Agregar a pantalla de i
 ## Archivos
 - `index.html`, `style.css`, `app.js`: la aplicación.
 - `manifest.webmanifest`, `sw.js`, `icons/`: instalación y uso sin conexión.
+- `vendor/`: lector de PDF (pdf.js, licencia Apache 2.0) para importar hojas de despacho sin enviar el archivo a ningún servidor.
